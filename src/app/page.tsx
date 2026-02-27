@@ -1,52 +1,48 @@
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-red-700 flex flex-col items-center justify-center p-4">
-      {/* Tarjeta Blanca Central */}
-      <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md text-center">
-        
-        {/* Encabezado */}
-        <h1 className="text-4xl font-extrabold text-red-700 mb-2">OroJuez SA</h1>
-        <p className="text-gray-500 mb-8 font-medium uppercase tracking-wider">
-          Control de Pesos y Procesos
-        </p>
-        
-        {/* Formulario */}
-        <form className="space-y-4 text-left">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">
-              Usuario / Email
-            </label>
-            <input 
-              type="email" 
-              placeholder="ejemplo@orojuez.com" 
-              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-600 transition-all"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">
-              Contraseña
-            </label>
-            <input 
-              type="password" 
-              placeholder="••••••••" 
-              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-600 transition-all"
-            />
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-6">
+      {/* Contenedor Principal */}
+      <div className="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden border-t-8 border-red-700">
+        <div className="p-8">
+          {/* Logo o Título Ejecutivo */}
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-gray-800 tracking-tight">OROJUEZ <span className="text-red-700">SA</span></h1>
+            <div className="h-1 w-20 bg-red-700 mx-auto mt-2"></div>
+            <p className="text-gray-500 mt-4 text-sm font-semibold uppercase tracking-widest">Control de Pesos y Procesos</p>
           </div>
 
-          <button 
-            type="button"
-            className="w-full bg-red-700 text-white font-bold py-3 rounded-lg hover:bg-red-800 transition-colors shadow-lg mt-4"
-          >
-            ENTRAR AL SISTEMA
-          </button>
-        </form>
+          <form className="space-y-6">
+            <div>
+              <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Correo Corporativo</label>
+              <input 
+                type="email" 
+                className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-red-500 focus:ring-2 focus:ring-red-200 outline-none transition-all text-gray-700"
+                placeholder="usuario@orojuez.com"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Contraseña de Acceso</label>
+              <input 
+                type="password" 
+                className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-red-500 focus:ring-2 focus:ring-red-200 outline-none transition-all text-gray-700"
+                placeholder="••••••••"
+              />
+            </div>
+
+            <button className="w-full bg-red-700 hover:bg-red-800 text-white font-bold py-3 px-4 rounded-lg shadow-lg transform active:scale-95 transition-all uppercase tracking-wider text-sm">
+              Ingresar al Sistema
+            </button>
+          </form>
+
+          <div className="mt-8 text-center">
+            <a href="#" className="text-xs text-gray-400 hover:text-red-600 transition-colors">¿Olvidó sus credenciales de acceso?</a>
+          </div>
+        </div>
         
-        {/* Pie de página de la tarjeta */}
-        <div className="mt-8 pt-6 border-t border-gray-100">
-          <p className="text-xs text-gray-400 font-semibold italic">
-            SISTEMA DE CONTROL INTERNO V1.0<br/>
-            © 2026 ÁREA DE SISTEMAS OROJUEZ SA
+        <div className="bg-gray-50 py-4 text-center border-t border-gray-100">
+          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+            Desarrollado por el Área de Sistemas - 2026
           </p>
         </div>
       </div>
