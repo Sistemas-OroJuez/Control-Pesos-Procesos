@@ -5,12 +5,12 @@ export default function Dashboard() {
   const router = useRouter();
 
   const modules = [
-    { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white', route: '/admin' },
-    { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white', route: '/parametros' },
+    { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin' },
+    { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros' },
     { id: 3, name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso' },
-    { id: 4, name: 'Reportes Generales', icon: '📋', color: 'bg-white', route: '/reportes' },
-    { id: 5, name: 'Reportes Gerenciales', icon: '📊', color: 'bg-white', route: '/gerencia' },
-    { id: 7, name: 'Estadísticas y Tiempos', icon: '⏱️', color: 'bg-white', route: '/estadisticas' },
+    { id: 4, name: 'Reportes Generales', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes' },
+    { id: 5, name: 'Reportes Gerenciales', icon: '📊', color: 'bg-white text-gray-800', route: '/gerencia' },
+    { id: 7, name: 'Estadísticas y Tiempos', icon: '⏱️', color: 'bg-white text-gray-800', route: '/estadisticas' },
   ];
 
   return (
@@ -47,12 +47,12 @@ export default function Dashboard() {
             <button
               key={mod.id}
               onClick={() => router.push(mod.route)}
-              className={\ p-10 rounded-2xl shadow-sm border border-gray-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center group}
+              className={mod.color + " p-10 rounded-2xl shadow-sm border border-gray-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center group"}
             >
               <span className="text-4xl mb-4 group-hover:scale-110 transition-transform">
                 {mod.icon}
               </span>
-              <span className="font-bold uppercase text-xs tracking-widest text-center px-2">
+              <span className="font-bold uppercase text-[11px] tracking-widest text-center px-2 leading-tight">
                 {mod.name}
               </span>
             </button>
@@ -60,7 +60,7 @@ export default function Dashboard() {
         </div>
       </main>
 
-      <footer className="fixed bottom-0 w-full p-4 text-center">
+      <footer className="fixed bottom-0 w-full p-4 text-center bg-gray-100/80 backdrop-blur-sm">
         <p className="text-[9px] text-gray-400 font-bold uppercase tracking-[0.3em]">
           OroJuez S.A. - Infraestructura Crítica de Datos
         </p>
