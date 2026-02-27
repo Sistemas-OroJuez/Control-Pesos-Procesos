@@ -14,7 +14,7 @@ export default function ParametrosAdmin() {
   }, []);
 
   async function cargarParametros() {
-    const { data } = await supabase.from('parametros').select('*').order('created_at', { ascending: false });
+    const { data } = await supabase.from('parametros').select('*').order('categoria', { ascending: true });
     if (data) setLista(data);
   }
 
@@ -36,42 +36,40 @@ export default function ParametrosAdmin() {
     <div className="min-h-screen bg-gray-50 p-4">
       <nav className="flex items-center gap-4 mb-6">
         <button onClick={() => router.push('/dashboard')} className="bg-white p-2 rounded-lg shadow-sm font-bold text-xs border">← VOLVER</button>
-        <h1 className="text-red-700 font-black uppercase tracking-tighter text-xl leading-none">Configuración<br/>de Parámetros</h1>
+        <h1 className="text-red-700 font-black uppercase tracking-tighter text-xl leading-none">Configuración<br/>del Sistema</h1>
       </nav>
 
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 mb-6">
-        <p className="text-[10px] font-black text-gray-400 uppercase mb-4 tracking-widest">Agregar Nuevo Parámetro</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase mb-4 tracking-widest text-center">Registrar nuevo parámetro</p>
         <div className="space-y-4">
           <select 
-            className="w-full p-4 bg-gray-50 border rounded-2xl font-bold text-gray-700 outline-none focus:border-red-700"
+            className="w-full p-4 bg-gray-50 border-2 rounded-2xl font-bold text-gray-700 outline-none"
             value={categoria}
             onChange={(e) => setCategoria(e.target.value)}
           >
+            <option value="operador">Operador (Nombre de Persona)</option>
             <option value="variedad">Variedad de Producto</option>
             <option value="proveedor">Proveedor MP</option>
           </select>
           <input 
             type="text" 
-            placeholder="Nombre (Ej: Alto Oleico)" 
-            className="w-full p-4 border rounded-2xl font-bold outline-none focus:border-red-700"
+            placeholder="Ej: Juan Rodriguez" 
+            className="w-full p-4 border-2 rounded-2xl font-bold outline-none"
             value={valor}
             onChange={(e) => setValor(e.target.value)}
           />
-          <button 
-            onClick={guardar}
-            className="w-full bg-red-700 text-white p-4 rounded-2xl font-black uppercase text-xs shadow-lg shadow-red-200"
-          >
-            Guardar Parámetro
+          <button onClick={guardar} className="w-full bg-red-700 text-white p-4 rounded-2xl font-black uppercase text-xs shadow-lg">
+            Registrar en Lista
           </button>
         </div>
       </div>
 
       <div className="space-y-2">
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Lista Actual</p>
+        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Datos Activos</p>
         {lista.map((p) => (
           <div key={p.id} className="bg-white p-4 rounded-2xl flex justify-between items-center border shadow-sm">
             <div>
-              <p className="text-[8px] font-black text-red-700 uppercase">{p.categoria}</p>
+              <p className="text-[8px] font-black text-red-700 uppercase tracking-widest">{p.categoria}</p>
               <p className="font-bold text-gray-800 uppercase text-sm">{p.valor}</p>
             </div>
             <button onClick={() => eliminar(p.id)} className="p-2 text-gray-300 hover:text-red-600">🗑️</button>
