@@ -5,12 +5,12 @@ export default function Dashboard() {
   const router = useRouter();
 
   const modules = [
-    { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin' },
-    { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros' },
     { id: 3, name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso' },
+    { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros' },
     { id: 4, name: 'Reportes Generales', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes' },
     { id: 5, name: 'Reportes Gerenciales', icon: '📊', color: 'bg-white text-gray-800', route: '/gerencia' },
     { id: 7, name: 'Estadísticas y Tiempos', icon: '⏱️', color: 'bg-white text-gray-800', route: '/estadisticas' },
+    { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin' },
   ];
 
   return (
@@ -40,7 +40,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* CUADRÍCULA DE MÓDULOS */}
+      {/* CUADRÍCULA DE MÓDULOS REORGANIZADA */}
       <main className="max-w-6xl mx-auto p-6 md:p-12">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {modules.map((mod) => (
