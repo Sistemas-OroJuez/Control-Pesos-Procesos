@@ -1,0 +1,27 @@
+ El volumen de la unidad C no tiene etiqueta.
+ El n£mero de serie del volumen es: FC04-072F
+
+ Directorio de C:\Sistemas\apporojuez
+
+02/03/2026  12:59    <DIR>          .
+02/03/2026  12:59    <DIR>          ..
+27/02/2026  10:13               480 .gitignore
+27/02/2026  10:20    <DIR>          .next
+02/03/2026  12:13            21.446 Desarrollo.docx
+27/02/2026  10:13               465 eslint.config.mjs
+02/03/2026  12:59                 0 ListOfFiles.txt
+27/02/2026  12:33               105 netlify.toml
+27/02/2026  10:13               247 next-env.d.ts
+27/02/2026  10:19               156 next.config.ts
+27/02/2026  12:57    <DIR>          node_modules
+27/02/2026  12:57           235.948 package-lock.json
+27/02/2026  12:57               681 package.json
+27/02/2026  14:04               116 passwords.txt
+27/02/2026  12:51                96 postcss.config.mjs
+27/02/2026  15:49    <DIR>          public
+27/02/2026  10:13             1.450 README.md
+27/02/2026  12:58    <DIR>          src
+27/02/2026  12:48               357 tailwind.config.ts
+27/02/2026  10:19               670 tsconfig.json
+              14 archivos        262.217 bytes
+               6 dirs  79.239.393.280 bytes libres

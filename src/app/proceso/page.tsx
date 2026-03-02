@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+// Importamos la utilidad de subida (asegúrate de haber creado src/lib/storage-utils.ts)
+import { subirImagen } from '@/lib/storage-utils';
 
 export default function ProcesoLlenado() {
   const router = useRouter();
@@ -15,11 +17,12 @@ export default function ProcesoLlenado() {
     operador: '', variedad: '', proveedor: '', turno: 'T1', peso_final: '', observaciones: ''
   });
 
+  // MODIFICADO: Ahora incluimos el campo 'archivo' para guardar el File real
   const [fotos, setFotos] = useState({
-    visor_cero: { url: '', hora: null as string | null },
-    tanque_vacio: { url: '', hora: null as string | null },
-    visor_lleno: { url: '', hora: null as string | null },
-    incidencia: { url: '' }
+    visor_cero: { url: '', hora: null as string | null, archivo: null as File | null },
+    tanque_vacio: { url: '', hora: null as string | null, archivo: null as File | null },
+    visor_lleno: { url: '', hora: null as string | null, archivo: null as File | null },
+    incidencia: { url: '', archivo: null as File | null }
   });
 
   useEffect(() => {
@@ -30,160 +33,202 @@ export default function ProcesoLlenado() {
       const a = String(hoy.getFullYear()).slice(-2);
       const prefix = `EXT${d}${m}${a}`;
       
-      const { count } = await supabase.from('procesos_batch').select('*', { count: 'exact', head: true }).filter('batch_id', 'ilike', `${prefix}%`);
-      setBatchId(`${prefix}${String((count || 0) + 1).padStart(2, '0')}`);
+      const { count } = await supabase
+        .from('procesos_batch')
+        .select('*', { count: 'exact', head: true })
+        .like('batch_id', `${prefix}%`);
 
-      const { data: p } = await supabase.from('parametros').select('*').eq('activo', true);
-      if (p) {
-        setListaVariedades(p.filter((i: any) => i.categoria === 'variedad'));
-        setListaProveedores(p.filter((i: any) => i.categoria === 'proveedor'));
-        setListaOperadores(p.filter((i: any) => i.categoria === 'operador'));
+      const sequence = String((count || 0) + 1).padStart(2, '0');
+      setBatchId(`${prefix}${sequence}`);
+
+      // Cargar parámetros de la base de datos
+      const { data: params } = await supabase.from('parametros').select('*').eq('activo', true);
+      if (params) {
+        setListaVariedades(params.filter(p => p.categoria === 'variedad'));
+        setListaProveedores(params.filter(p => p.categoria === 'proveedor'));
+        setListaOperadores(params.filter(p => p.categoria === 'operador'));
       }
     }
     inicializar();
   }, []);
 
-  // FUNCIÓN CORREGIDA PARA FORZAR CÁMARA TRASERA
-  const abrirCamara = (campo: string) => {
+  const abrirCamara = async (tipo: keyof typeof fotos) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    input.capture = 'environment'; // FUERZA CÁMARA TRASERA EN MÓVILES
+    input.capture = 'environment';
     
-    input.onchange = (e: any) => {
+    input.onchange = async (e: any) => {
       const file = e.target.files[0];
       if (file) {
-        const horaActual = new Date().toISOString();
-        // Generamos un nombre de archivo único para la lógica de guardado posterior
-        const nombreArchivo = `${batchId}_${campo}_${Date.now()}.jpg`;
-        const linkFake = `https://github.com/OroJuez/img/raw/main/${nombreArchivo}`;
-        
-        setFotos(prev => ({ 
-          ...prev, 
-          [campo]: { url: linkFake, hora: horaActual } 
-        }));
+        const reader = new FileReader();
+        reader.onload = () => {
+          setFotos(prev => ({
+            ...prev,
+            [tipo]: { 
+              url: reader.result as string, 
+              hora: new Date().toISOString(),
+              archivo: file // Guardamos el archivo para la subida
+            }
+          }));
+        };
+        reader.readAsDataURL(file);
       }
     };
     input.click();
   };
 
+  // FUNCIÓN GUARDAR ACTUALIZADA (Arquitectura Híbrida)
   const guardarBatch = async () => {
-    if (!datos.operador || !datos.peso_final || !fotos.visor_lleno.hora || !fotos.visor_cero.hora) {
-      alert("⚠️ Error: Faltan datos obligatorios (Operador, Fotos de Inicio, Peso Final).");
+    if (!fotos.visor_cero.archivo || !fotos.tanque_vacio.archivo || !fotos.visor_lleno.archivo) {
+      alert("⚠️ Faltan fotos obligatorias: Visor 0, Tanque Vacío o Visor Lleno.");
       return;
     }
-    setLoading(true);
-    const { error } = await supabase.from('procesos_batch').insert([{
-      batch_id: batchId,
-      turno: datos.turno,
-      variedad: datos.variedad,
-      proveedor: datos.proveedor,
-      operador_email: datos.operador,
-      peso_valor_operador: parseFloat(datos.peso_final),
-      observaciones: datos.observaciones,
-      foto_visor_cero_url: fotos.visor_cero.url,
-      hora_foto_visor_cero: fotos.visor_cero.hora,
-      foto_tanque_vacio_url: fotos.tanque_vacio.url,
-      hora_foto_tanque_vacio: fotos.tanque_vacio.hora,
-      foto_visor_lleno_url: fotos.visor_lleno.url,
-      hora_foto_visor_lleno: fotos.visor_lleno.hora,
-      foto_incidencia_url: fotos.incidencia.url,
-      fecha_hora_inicio: fotos.visor_cero.hora,
-      fecha_hora_fin: new Date().toISOString()
-    }]);
 
-    if (!error) {
-      alert("✅ REGISTRO EXITOSO: " + batchId);
+    if (!datos.peso_final || !datos.variedad || !datos.proveedor) {
+      alert("⚠️ Complete los datos de selección y el peso final.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1. SUBIDA DE ARCHIVOS AL BUCKET (Storage)
+      const urlV0 = await subirImagen(fotos.visor_cero.archivo, 'visor_cero');
+      const urlTV = await subirImagen(fotos.tanque_vacio.archivo, 'tanque_vacio');
+      const urlVL = await subirImagen(fotos.visor_lleno.archivo, 'visor_lleno');
+      
+      let urlInc = null;
+      if (fotos.incidencia.archivo) {
+        urlInc = await subirImagen(fotos.incidencia.archivo, 'incidencia');
+      }
+
+      // 2. GUARDADO DE DATOS EN TABLA (SQL)
+      const { error } = await supabase.from('procesos_batch').insert([{
+        batch_id: batchId,
+        operador_email: datos.operador,
+        variedad: datos.variedad,
+        proveedor: datos.proveedor,
+        turno: datos.turno,
+        
+        foto_visor_cero_url: urlV0,
+        hora_foto_visor_cero: fotos.visor_cero.hora,
+        
+        foto_tanque_vacio_url: urlTV,
+        hora_foto_tanque_vacio: fotos.tanque_vacio.hora,
+        
+        foto_visor_lleno_url: urlVL,
+        hora_foto_visor_lleno: fotos.visor_lleno.hora,
+        
+        foto_justificacion_url: urlInc,
+        
+        peso_final_digitado: parseFloat(datos.peso_final),
+        observaciones: datos.observaciones,
+        fecha_hora_inicio: fotos.visor_cero.hora,
+        fecha_hora_fin: new Date().toISOString()
+      }]);
+
+      if (error) throw error;
+
+      alert("✅ Batch registrado exitosamente.");
       router.push('/dashboard');
-    } else {
-      alert("Error: " + error.message);
+    } catch (err: any) {
+      alert("❌ Error: " + err.message);
+    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 pb-32">
-      <nav className="bg-red-700 text-white p-4 sticky top-0 z-50 flex justify-between items-center shadow-lg">
-        <div className="flex items-center gap-2">
-           <img src="/logo-orojuez.jpg" className="h-10 bg-white rounded p-1" />
-           <span className="font-black text-xs tracking-tighter">SISTEMA EXTRACCIÓN</span>
+    <div className="min-h-screen bg-white pb-24">
+      <header className="bg-red-700 p-4 text-white sticky top-0 z-10 shadow-lg">
+        <div className="flex justify-between items-center">
+          <button onClick={() => router.back()} className="text-2xl">←</button>
+          <div className="text-center">
+            <h1 className="font-bold text-sm tracking-widest">NUEVO BATCH</h1>
+            <p className="text-[10px] opacity-80">{batchId}</p>
+          </div>
+          <div className="w-8"></div>
         </div>
-        <p className="text-lg font-black font-mono bg-white/20 px-3 rounded-lg">{batchId}</p>
-      </nav>
+      </header>
 
-      <div className="p-4 space-y-5">
-        <section className="bg-white p-5 rounded-3xl shadow-sm space-y-4 border border-gray-200">
-          <div className="flex flex-col">
-            <label className="text-[10px] font-black text-red-700 mb-1 ml-1 uppercase">Nombre del Operador</label>
-            <select className="p-4 bg-gray-50 border-2 border-gray-100 rounded-2xl font-bold text-sm outline-none focus:border-red-700 transition-all text-gray-700" onChange={e=>setDatos({...datos, operador: e.target.value})}>
-              <option value="">-- Seleccione --</option>
-              {listaOperadores.map((op: any) => <option key={op.id} value={op.valor}>{op.valor}</option>)}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-             <div className="flex flex-col">
-                <label className="text-[10px] font-bold text-gray-400 mb-1 ml-1 uppercase">Turno</label>
-                <select className="p-3 bg-gray-50 border rounded-xl font-bold text-gray-600" value={datos.turno} onChange={e=>setDatos({...datos, turno: e.target.value})}>
-                  <option value="T1">T1 (Mañana)</option>
-                  <option value="T2">T2 (Noche)</option>
-                </select>
-             </div>
-             <div className="flex flex-col">
-                <label className="text-[10px] font-bold text-gray-400 mb-1 ml-1 uppercase">Variedad</label>
-                <select className="p-3 bg-gray-50 border rounded-xl font-bold text-gray-600" onChange={e=>setDatos({...datos, variedad: e.target.value})}>
-                  <option value="">Producto...</option>
-                  {listaVariedades.map((v: any) => <option key={v.id} value={v.valor}>{v.valor}</option>)}
-                </select>
-             </div>
-          </div>
-          <select className="w-full p-4 bg-gray-50 border rounded-2xl font-bold text-sm text-gray-600" onChange={e=>setDatos({...datos, proveedor: e.target.value})}>
-            <option value="">Proveedor Materia Prima...</option>
-            {listaProveedores.map((p: any) => <option key={p.id} value={p.valor}>{p.valor}</option>)}
+      <div className="p-5 space-y-6">
+        {/* SELECCIÓN DE PARÁMETROS */}
+        <section className="space-y-4 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+          <select 
+            className="w-full p-4 rounded-xl border-2 border-gray-100 text-sm font-bold outline-none focus:border-red-700"
+            onChange={e => setDatos({...datos, variedad: e.target.value})}
+          >
+            <option value="">SELECCIONE VARIEDAD</option>
+            {listaVariedades.map(v => <option key={v.id} value={v.valor}>{v.valor}</option>)}
           </select>
+
+          <select 
+            className="w-full p-4 rounded-xl border-2 border-gray-100 text-sm font-bold outline-none focus:border-red-700"
+            onChange={e => setDatos({...datos, proveedor: e.target.value})}
+          >
+            <option value="">SELECCIONE PROVEEDOR</option>
+            {listaProveedores.map(p => <option key={p.id} value={p.valor}>{p.valor}</option>)}
+          </select>
+
+          <div className="flex gap-2">
+            {['T1', 'T2'].map(t => (
+              <button 
+                key={t}
+                onClick={() => setDatos({...datos, turno: t})}
+                className={`flex-1 p-3 rounded-xl font-bold text-xs transition-all ${datos.turno === t ? 'bg-red-700 text-white shadow-md' : 'bg-white text-gray-400 border-2 border-gray-100'}`}
+              >
+                TURNO {t}
+              </button>
+            ))}
+          </div>
         </section>
 
-        {/* FOTOS DE INICIO */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* EVIDENCIA DE INICIO */}
+        <section className="grid grid-cols-2 gap-3">
           <button 
             type="button"
             onClick={() => abrirCamara('visor_cero')} 
-            className={`p-6 rounded-3xl border-2 flex flex-col items-center gap-2 active:scale-95 transition-all ${fotos.visor_cero.hora ? 'border-green-500 bg-green-50 text-green-700 shadow-inner' : 'border-gray-200 bg-white text-gray-400 shadow-sm'}`}
+            className={`aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.visor_cero.url ? 'border-green-500 bg-green-50' : 'border-gray-300 text-gray-400'}`}
           >
-            <span className="text-4xl">⚖️</span>
-            <span className="text-[10px] font-black uppercase text-center leading-tight">Inicio Visor<br/>Sin Peso (0)</span>
-            {fotos.visor_cero.hora && <span className="text-[8px] font-bold bg-green-500 text-white px-2 py-0.5 rounded-full">CAPTURADA</span>}
+            {fotos.visor_cero.url ? <img src={fotos.visor_cero.url} className="w-full h-full object-cover rounded-lg" /> : <>
+              <span className="text-2xl mb-1">⚖️</span>
+              <span className="text-[9px] font-bold text-center uppercase">Visor en Cero</span>
+            </>}
           </button>
 
           <button 
             type="button"
             onClick={() => abrirCamara('tanque_vacio')} 
-            className={`p-6 rounded-3xl border-2 flex flex-col items-center gap-2 active:scale-95 transition-all ${fotos.tanque_vacio.hora ? 'border-green-500 bg-green-50 text-green-700 shadow-inner' : 'border-gray-200 bg-white text-gray-400 shadow-sm'}`}
+            className={`aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.tanque_vacio.url ? 'border-green-500 bg-green-50' : 'border-gray-300 text-gray-400'}`}
           >
-            <span className="text-4xl">🚜</span>
-            <span className="text-[10px] font-black uppercase text-center leading-tight">Foto<br/>Tanque Vacío</span>
-            {fotos.tanque_vacio.hora && <span className="text-[8px] font-bold bg-green-500 text-white px-2 py-0.5 rounded-full">CAPTURADA</span>}
+            {fotos.tanque_vacio.url ? <img src={fotos.tanque_vacio.url} className="w-full h-full object-cover rounded-lg" /> : <>
+              <span className="text-2xl mb-1">🛢️</span>
+              <span className="text-[9px] font-bold text-center uppercase">Tanque Vacío</span>
+            </>}
           </button>
-        </div>
+        </section>
 
-        {/* PESO Y FOTO LLENO */}
-        <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
-          <button 
-            type="button"
-            onClick={() => abrirCamara('visor_lleno')} 
-            className={`w-full p-5 rounded-2xl border-2 flex items-center justify-center gap-3 font-black text-xs uppercase active:scale-95 transition-all ${fotos.visor_lleno.hora ? 'border-green-500 bg-green-50 text-green-700' : 'border-red-700 bg-red-50 text-red-700 animate-pulse'}`}
-          >
-            📸 Foto Visor Tanque Lleno
-          </button>
+        {/* EVIDENCIA DE CIERRE */}
+        <section className="bg-red-50 p-4 rounded-2xl border border-red-100 space-y-4">
+          <h3 className="text-[10px] font-black text-red-700 uppercase tracking-widest text-center">Finalización del Batch</h3>
           
-          <div className="text-center bg-gray-50 p-4 rounded-3xl border-2 border-dashed border-gray-200">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Dato Numérico Valor Kg</label>
+          <div className="flex gap-3">
+            <button 
+              type="button"
+              onClick={() => abrirCamara('visor_lleno')} 
+              className={`w-1/3 aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center transition-all ${fotos.visor_lleno.url ? 'border-red-500 bg-white' : 'border-red-200 text-red-300'}`}
+            >
+              {fotos.visor_lleno.url ? <img src={fotos.visor_lleno.url} className="w-full h-full object-cover rounded-lg" /> : <>
+                <span className="text-xl">📸</span>
+                <span className="text-[8px] font-bold uppercase">Visor Lleno</span>
+              </>}
+            </button>
+            
             <input 
               type="number" 
-              placeholder="0.00" 
-              inputMode="decimal"
-              className="w-full bg-transparent text-center text-5xl font-black text-gray-800 outline-none placeholder:text-gray-200"
-              onChange={e=>setDatos({...datos, peso_final: e.target.value})}
+              placeholder="PESO FINAL"
+              className="w-2/3 bg-white p-4 rounded-xl border-2 border-red-100 text-2xl font-black text-red-700 outline-none placeholder:text-red-200"
+              onChange={e => setDatos({...datos, peso_final: e.target.value})}
             />
           </div>
         </section>
@@ -210,9 +255,9 @@ export default function ProcesoLlenado() {
         <button 
           onClick={guardarBatch} 
           disabled={loading} 
-          className="w-full bg-red-700 text-white py-5 rounded-2xl font-black shadow-xl uppercase tracking-widest active:scale-95 disabled:bg-gray-400 transition-all"
+          className="w-full bg-red-700 text-white py-5 rounded-2xl font-black text-sm tracking-[3px] shadow-xl active:scale-95 transition-all disabled:bg-gray-400"
         >
-          {loading ? 'GUARDANDO DATOS...' : 'FINALIZAR BATCH'}
+          {loading ? 'ENVIANDO A NUBE...' : 'GUARDAR PROCESO'}
         </button>
       </div>
     </div>
