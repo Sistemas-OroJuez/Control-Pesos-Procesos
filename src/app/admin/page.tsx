@@ -1,8 +1,12 @@
 ﻿'use client';
+// ESTO ES LO QUE SOLUCIONA EL ERROR DE PRERENDER EN VERCEL
+export const dynamic = 'force-dynamic'; 
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
+// ... resto del código que te pasé antes
 export default function GestionUsuarios() {
   const router = useRouter();
   const [usuarios, setUsuarios] = useState<any[]>([]);
