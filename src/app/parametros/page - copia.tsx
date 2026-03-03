@@ -15,8 +15,8 @@ export default function ParametrosAdmin() {
 
   // Estados para Sitios y Localidades
   const [sitios, setSitios] = useState<any[]>([]);
-  const [localidades, setLocalidades] = useState<any[]>([]);
-  const [formSitio, setFormSitio] = useState({ nombre: '', localidad_id: '' });
+  const [localidades, setLocalidades] = useState<any[]>([]); // NUEVO
+  const [formSitio, setFormSitio] = useState({ nombre: '', localidad_id: '' }); // ACTUALIZADO
 
   // Estados para Operadores
   const [operadores, setOperadores] = useState<any[]>([]);
@@ -28,24 +28,19 @@ export default function ParametrosAdmin() {
 
   async function cargarTodo() {
     setLoading(true);
-    try {
-      // Carga paralela de todas las tablas necesarias
-      const [resGen, resSit, resOpe, resLoc] = await Promise.all([
-        supabase.from('parametros').select('*').order('categoria'),
-        supabase.from('sitios').select('*, localidades(nombre)').order('nombre'),
-        supabase.from('operadores').select('*, sitios(nombre)').order('nombre'),
-        supabase.from('localidades').select('*').order('nombre')
-      ]);
-      
-      if (resGen.data) setListaGeneral(resGen.data);
-      if (resSit.data) setSitios(resSit.data);
-      if (resOpe.data) setOperadores(resOpe.data);
-      if (resLoc.data) setLocalidades(resLoc.data);
-    } catch (error) {
-      console.error("Error cargando datos:", error);
-    } finally {
-      setLoading(false);
-    }
+    // Carga paralela incluyendo la tabla localidades
+    const [resGen, resSit, resOpe, resLoc] = await Promise.all([
+      supabase.from('parametros').select('*').order('categoria'),
+      supabase.from('sitios').select('*, localidades(nombre)').order('nombre'), // Incluye nombre de localidad
+      supabase.from('operadores').select('*, sitios(nombre)').order('nombre'),
+      supabase.from('localidades').select('*').order('nombre') // Nueva carga
+    ]);
+    
+    if (resGen.data) setListaGeneral(resGen.data);
+    if (resSit.data) setSitios(resSit.data);
+    if (resOpe.data) setOperadores(resOpe.data);
+    if (resLoc.data) setLocalidades(resLoc.data);
+    setLoading(false);
   }
 
   async function guardarGeneral() {
@@ -57,23 +52,18 @@ export default function ParametrosAdmin() {
   }
 
   async function guardarSitio() {
-    // Validación estricta antes de enviar a Supabase
+    // Validación de ambos campos
     if (!formSitio.nombre || !formSitio.localidad_id) {
-      alert("⚠️ El nombre del sitio y la Localidad son campos obligatorios.");
+      alert("Nombre del sitio y Localidad son obligatorios");
       return;
     }
-    
     const { error } = await supabase.from('sitios').insert([{ 
-      nombre: formSitio.nombre.toUpperCase().trim(),
+      nombre: formSitio.nombre.toUpperCase(),
       localidad_id: formSitio.localidad_id 
     }]);
-
-    if (error) {
-      alert("❌ Error al guardar: " + error.message);
-    } else {
-      setFormSitio({ nombre: '', localidad_id: '' });
-      cargarTodo();
-    }
+    if (error) alert(error.message);
+    setFormSitio({ nombre: '', localidad_id: '' });
+    cargarTodo();
   }
 
   async function guardarOperador() {
@@ -108,9 +98,7 @@ export default function ParametrosAdmin() {
       </nav>
 
       <main className="p-4 max-w-4xl mx-auto">
-        {loading && <p className="text-center font-bold text-red-700 animate-pulse py-10">ACTUALIZANDO DATOS...</p>}
-
-        {tab === 'generales' && !loading && (
+        {tab === 'generales' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-3xl shadow-sm border space-y-4">
               <p className="text-[10px] font-black text-red-700 uppercase tracking-widest">Añadir Variedad / Proveedor / Turno</p>
@@ -136,7 +124,8 @@ export default function ParametrosAdmin() {
           </div>
         )}
 
-        {tab === 'sitios' && !loading && (
+        {/* PESTAÑA SITIOS ACTUALIZADA */}
+        {tab === 'sitios' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-3xl shadow-sm border space-y-4">
               <p className="text-[10px] font-black text-red-700 uppercase tracking-widest text-center">Crear Nueva Ubicación / Sitio</p>
@@ -149,20 +138,17 @@ export default function ParametrosAdmin() {
                 onChange={(e) => setFormSitio({...formSitio, nombre: e.target.value})} 
               />
 
-              {/* SELECTOR DE LOCALIDAD */}
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-gray-400 ml-2 uppercase">Asignar a Localidad:</label>
-                <select 
-                  className="w-full p-4 border-2 rounded-2xl font-bold bg-gray-50 outline-none focus:border-red-700 text-sm"
-                  value={formSitio.localidad_id}
-                  onChange={(e) => setFormSitio({...formSitio, localidad_id: e.target.value})}
-                >
-                  <option value="">¿A QUÉ LOCALIDAD PERTENECE?</option>
-                  {localidades.map(loc => (
-                    <option key={loc.id} value={loc.id}>{loc.nombre}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Selector de Localidad Añadido */}
+              <select 
+                className="w-full p-4 border-2 rounded-2xl font-bold bg-gray-50 outline-none focus:border-red-700 text-sm"
+                value={formSitio.localidad_id}
+                onChange={(e) => setFormSitio({...formSitio, localidad_id: e.target.value})}
+              >
+                <option value="">¿A QUÉ LOCALIDAD PERTENECE?</option>
+                {localidades.map(loc => (
+                  <option key={loc.id} value={loc.id}>{loc.nombre}</option>
+                ))}
+              </select>
 
               <button onClick={guardarSitio} className="w-full bg-red-700 text-white p-4 rounded-2xl font-black text-xs shadow-xl uppercase transition-all active:scale-95">Guardar Sitio</button>
             </div>
@@ -172,7 +158,8 @@ export default function ParametrosAdmin() {
                 <div key={s.id} className="bg-white p-4 rounded-2xl flex justify-between items-center border shadow-sm">
                   <div className="flex flex-col">
                     <span className="font-bold text-gray-800 tracking-tight flex items-center gap-2">📍 {s.nombre}</span>
-                    <span className="text-[10px] text-gray-400 font-bold uppercase ml-6">Zona: {s.localidades?.nombre || '⚠️ SIN LOCALIDAD'}</span>
+                    {/* Muestra la localidad vinculada */}
+                    <span className="text-[10px] text-gray-400 font-bold uppercase ml-6">Zona: {s.localidades?.nombre || 'Sin asignar'}</span>
                   </div>
                   <button onClick={() => eliminarRegistro('sitios', s.id)} className="text-red-200 hover:text-red-600 text-xs font-bold p-2">ELIMINAR</button>
                 </div>
@@ -181,7 +168,7 @@ export default function ParametrosAdmin() {
           </div>
         )}
 
-        {tab === 'operadores' && !loading && (
+        {tab === 'operadores' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-3xl shadow-sm border space-y-4">
               <p className="text-[10px] font-black text-red-700 uppercase tracking-widest text-center">Registro de Operador</p>
