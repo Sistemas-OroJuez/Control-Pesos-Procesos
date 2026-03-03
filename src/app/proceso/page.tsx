@@ -1,4 +1,5 @@
 ﻿'use client';
+export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -53,9 +54,9 @@ export default function ProcesoLlenado() {
       ]);
 
       if (resParams.data) {
-        setListaVariedades(resParams.data.filter(p => p.categoria === 'variedad'));
-        setListaProveedores(resParams.data.filter(p => p.categoria === 'proveedor'));
-        setListaTurnos(resParams.data.filter(p => p.categoria === 'turno'));
+        setListaVariedades(resParams.data.filter((p: any) => p.categoria === 'variedad'));
+        setListaProveedores(resParams.data.filter((p: any) => p.categoria === 'proveedor'));
+        setListaTurnos(resParams.data.filter((p: any) => p.categoria === 'turno'));
       }
       if (resOps.data) setListaOperadores(resOps.data);
     }
