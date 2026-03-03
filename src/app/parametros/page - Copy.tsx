@@ -8,15 +8,14 @@ export default function ParametrosAdmin() {
   const [tab, setTab] = useState<'generales' | 'operadores' | 'sitios'>('generales');
   const [loading, setLoading] = useState(false);
 
-  // Estados para Parámetros Generales
+  // Estados para Parámetros Generales (Variedad, Proveedor, Turno)
   const [categoria, setCategoria] = useState('variedad');
   const [valor, setValor] = useState('');
   const [listaGeneral, setListaGeneral] = useState<any[]>([]);
 
-  // Estados para Sitios y Localidades
+  // Estados para Sitios
   const [sitios, setSitios] = useState<any[]>([]);
-  const [localidades, setLocalidades] = useState<any[]>([]); // NUEVO
-  const [formSitio, setFormSitio] = useState({ nombre: '', localidad_id: '' }); // ACTUALIZADO
+  const [nuevoSitio, setNuevoSitio] = useState('');
 
   // Estados para Operadores
   const [operadores, setOperadores] = useState<any[]>([]);
@@ -28,20 +27,20 @@ export default function ParametrosAdmin() {
 
   async function cargarTodo() {
     setLoading(true);
-    // Carga paralela incluyendo la tabla localidades
-    const [resGen, resSit, resOpe, resLoc] = await Promise.all([
+    // Carga paralela de todas las tablas
+    const [resGen, resSit, resOpe] = await Promise.all([
       supabase.from('parametros').select('*').order('categoria'),
-      supabase.from('sitios').select('*, localidades(nombre)').order('nombre'), // Incluye nombre de localidad
-      supabase.from('operadores').select('*, sitios(nombre)').order('nombre'),
-      supabase.from('localidades').select('*').order('nombre') // Nueva carga
+      supabase.from('sitios').select('*').order('nombre'),
+      supabase.from('operadores').select('*, sitios(nombre)').order('nombre')
     ]);
     
     if (resGen.data) setListaGeneral(resGen.data);
     if (resSit.data) setSitios(resSit.data);
     if (resOpe.data) setOperadores(resOpe.data);
-    if (resLoc.data) setLocalidades(resLoc.data);
     setLoading(false);
   }
+
+  // --- LÓGICA DE GUARDADO ---
 
   async function guardarGeneral() {
     if (!valor) return;
@@ -52,17 +51,10 @@ export default function ParametrosAdmin() {
   }
 
   async function guardarSitio() {
-    // Validación de ambos campos
-    if (!formSitio.nombre || !formSitio.localidad_id) {
-      alert("Nombre del sitio y Localidad son obligatorios");
-      return;
-    }
-    const { error } = await supabase.from('sitios').insert([{ 
-      nombre: formSitio.nombre.toUpperCase(),
-      localidad_id: formSitio.localidad_id 
-    }]);
+    if (!nuevoSitio) return;
+    const { error } = await supabase.from('sitios').insert([{ nombre: nuevoSitio.toUpperCase() }]);
     if (error) alert(error.message);
-    setFormSitio({ nombre: '', localidad_id: '' });
+    setNuevoSitio('');
     cargarTodo();
   }
 
@@ -85,11 +77,14 @@ export default function ParametrosAdmin() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
+      {/* HEADER DINÁMICO */}
       <nav className="bg-white p-4 shadow-md border-b-4 border-red-700 sticky top-0 z-10">
         <div className="flex items-center gap-4 max-w-4xl mx-auto">
           <button onClick={() => router.push('/dashboard')} className="p-2 bg-gray-100 rounded-lg font-bold text-xs hover:bg-gray-200 transition-all">← VOLVER</button>
           <h1 className="text-red-700 font-black uppercase text-xl tracking-tighter">Panel de Parámetros</h1>
         </div>
+        
+        {/* SELECTOR DE PESTAÑAS (TABS) */}
         <div className="flex gap-1 mt-4 max-w-4xl mx-auto bg-gray-100 p-1 rounded-2xl">
           <button onClick={() => setTab('generales')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'generales' ? 'bg-red-700 text-white shadow-md' : 'text-gray-500 hover:bg-gray-200'}`}>General</button>
           <button onClick={() => setTab('sitios')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${tab === 'sitios' ? 'bg-red-700 text-white shadow-md' : 'text-gray-500 hover:bg-gray-200'}`}>Sitios</button>
@@ -98,6 +93,8 @@ export default function ParametrosAdmin() {
       </nav>
 
       <main className="p-4 max-w-4xl mx-auto">
+        
+        {/* PESTAÑA: GENERAL (Variedades, Proveedores, Turnos) */}
         {tab === 'generales' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-3xl shadow-sm border space-y-4">
@@ -110,6 +107,7 @@ export default function ParametrosAdmin() {
               <input type="text" placeholder="Escriba el valor aquí..." className="w-full p-4 border-2 rounded-2xl font-bold outline-none focus:border-red-700" value={valor} onChange={(e) => setValor(e.target.value)} />
               <button onClick={guardarGeneral} className="w-full bg-red-700 text-white p-4 rounded-2xl font-black text-xs uppercase shadow-xl hover:bg-red-800 active:scale-95 transition-all">Registrar Parámetro</button>
             </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {listaGeneral.map((item) => (
                 <div key={item.id} className="bg-white p-4 rounded-2xl flex justify-between items-center border shadow-sm group">
@@ -124,50 +122,26 @@ export default function ParametrosAdmin() {
           </div>
         )}
 
-        {/* PESTAÑA SITIOS ACTUALIZADA */}
+        {/* PESTAÑA: SITIOS (Lugares de Trabajo) */}
         {tab === 'sitios' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-3xl shadow-sm border space-y-4">
-              <p className="text-[10px] font-black text-red-700 uppercase tracking-widest text-center">Crear Nueva Ubicación / Sitio</p>
-              
-              <input 
-                type="text" 
-                placeholder="Ej: REFINERIA ORJ STO DGO" 
-                className="w-full p-4 border-2 rounded-2xl font-bold outline-none focus:border-red-700" 
-                value={formSitio.nombre} 
-                onChange={(e) => setFormSitio({...formSitio, nombre: e.target.value})} 
-              />
-
-              {/* Selector de Localidad Añadido */}
-              <select 
-                className="w-full p-4 border-2 rounded-2xl font-bold bg-gray-50 outline-none focus:border-red-700 text-sm"
-                value={formSitio.localidad_id}
-                onChange={(e) => setFormSitio({...formSitio, localidad_id: e.target.value})}
-              >
-                <option value="">¿A QUÉ LOCALIDAD PERTENECE?</option>
-                {localidades.map(loc => (
-                  <option key={loc.id} value={loc.id}>{loc.nombre}</option>
-                ))}
-              </select>
-
-              <button onClick={guardarSitio} className="w-full bg-red-700 text-white p-4 rounded-2xl font-black text-xs shadow-xl uppercase transition-all active:scale-95">Guardar Sitio</button>
+              <p className="text-[10px] font-black text-red-700 uppercase tracking-widest">Crear Nueva Ubicación / Sitio</p>
+              <input type="text" placeholder="Ej: PLANTA LA UNIÓN" className="w-full p-4 border-2 rounded-2xl font-bold outline-none focus:border-red-700" value={nuevoSitio} onChange={(e) => setNuevoSitio(e.target.value)} />
+              <button onClick={guardarSitio} className="w-full bg-red-700 text-white p-4 rounded-2xl font-black text-xs shadow-xl">Guardar Sitio</button>
             </div>
-
             <div className="grid grid-cols-1 gap-2">
               {sitios.map((s) => (
                 <div key={s.id} className="bg-white p-4 rounded-2xl flex justify-between items-center border shadow-sm">
-                  <div className="flex flex-col">
-                    <span className="font-bold text-gray-800 tracking-tight flex items-center gap-2">📍 {s.nombre}</span>
-                    {/* Muestra la localidad vinculada */}
-                    <span className="text-[10px] text-gray-400 font-bold uppercase ml-6">Zona: {s.localidades?.nombre || 'Sin asignar'}</span>
-                  </div>
-                  <button onClick={() => eliminarRegistro('sitios', s.id)} className="text-red-200 hover:text-red-600 text-xs font-bold p-2">ELIMINAR</button>
+                  <span className="font-bold text-gray-800 tracking-tight flex items-center gap-2">📍 {s.nombre}</span>
+                  <button onClick={() => eliminarRegistro('sitios', s.id)} className="text-red-200 hover:text-red-600">Eliminar</button>
                 </div>
               ))}
             </div>
           </div>
         )}
 
+        {/* PESTAÑA: OPERADORES (Gestión de Personal) */}
         {tab === 'operadores' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-3xl shadow-sm border space-y-4">
@@ -196,6 +170,7 @@ export default function ParametrosAdmin() {
             </div>
           </div>
         )}
+
       </main>
     </div>
   );
