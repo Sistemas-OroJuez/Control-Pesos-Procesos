@@ -3,14 +3,15 @@ export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 
 import { useState, useEffect } from 'react';
-// ... resto de imports
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
-// ... el resto del código que te pasé antes
-
 export default function GestionUsuarios() {
   const router = useRouter();
+  
+  // ESCUDO DE HIDRATACIÓN: Estado para asegurar que estamos en el cliente
+  const [isClient, setIsClient] = useState(false);
+  
   const [usuarios, setUsuarios] = useState<any[]>([]);
   const [localidades, setLocalidades] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -27,19 +28,29 @@ export default function GestionUsuarios() {
   // Formulario Localidad
   const [nuevaLocalidad, setNuevaLocalidad] = useState('');
 
+  // Solo se activa al cargar en el navegador
   useEffect(() => {
+    setIsClient(true);
     cargarUsuarios();
     cargarLocalidades();
   }, []);
 
   async function cargarLocalidades() {
-    const { data } = await supabase.from('localidades').select('*').order('nombre');
-    if (data) setLocalidades(data);
+    try {
+      const { data } = await supabase.from('localidades').select('*').order('nombre');
+      if (data) setLocalidades(data);
+    } catch (e) {
+      console.error("Error al cargar localidades");
+    }
   }
 
   async function cargarUsuarios() {
-    const { data } = await supabase.from('perfiles').select('*').order('created_at');
-    if (data) setUsuarios(data);
+    try {
+      const { data } = await supabase.from('perfiles').select('*').order('created_at');
+      if (data) setUsuarios(data);
+    } catch (e) {
+      console.error("Error al cargar usuarios");
+    }
   }
 
   const handleAgregarLocalidad = async (e: React.FormEvent) => {
@@ -102,6 +113,15 @@ export default function GestionUsuarios() {
     setLoading(false);
   }
 
+  // Si Next.js intenta pre-renderizar en el Build, esto lo detiene pacíficamente
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gray-100 p-4 flex items-center justify-center">
+        <p className="font-black text-gray-400 animate-pulse">CARGANDO MÓDULO DE ADMINISTRACIÓN...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-100 p-4">
       <header className="max-w-5xl mx-auto mb-6 flex justify-between items-center">
@@ -120,7 +140,7 @@ export default function GestionUsuarios() {
             </form>
             <div className="space-y-2">
               {localidades.map(loc => (
-                <div key={loc.id} className="text-[11px] font-bold bg-gray-50 p-2 rounded-lg border border-gray-100 flex justify-between">
+                <div key={loc.id} className="text-[11px] font-bold bg-gray-100 p-2 rounded-lg border border-gray-100 flex justify-between">
                   <span>📍 {loc.nombre.toUpperCase()}</span>
                 </div>
               ))}

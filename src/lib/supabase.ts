@@ -1,7 +1,10 @@
 ﻿import { createClient } from '@supabase/supabase-js';
 
-// Usamos valores vacíos por defecto para que el compilador no se queje
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Solo creamos el cliente si las variables existen. 
+// Si no (durante el build), devolvemos un objeto vacío para que Next.js no explote.
+export const supabase = (supabaseUrl && supabaseAnonKey) 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : {} as any;
