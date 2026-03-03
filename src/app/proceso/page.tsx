@@ -1,5 +1,7 @@
 ﻿'use client';
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -7,6 +9,10 @@ import { subirImagen } from '@/lib/storage-utils';
 
 export default function ProcesoLlenado() {
   const router = useRouter();
+  
+  // ESCUDO DE HIDRATACIÓN PARA EVITAR ERRORES EN EL BUILD DE VERCEL
+  const [isClient, setIsClient] = useState(false);
+  
   const [batchId, setBatchId] = useState('Cargando...');
   const [listaVariedades, setListaVariedades] = useState<any[]>([]);
   const [listaProveedores, setListaProveedores] = useState<any[]>([]);
@@ -31,6 +37,8 @@ export default function ProcesoLlenado() {
   });
 
   useEffect(() => {
+    setIsClient(true); // Indica que ya estamos en el navegador
+    
     async function inicializar() {
       // 1. Generar ID de Batch
       const hoy = new Date();
@@ -54,6 +62,7 @@ export default function ProcesoLlenado() {
       ]);
 
       if (resParams.data) {
+        // CORRECCIÓN TYPESCRIPT: (p: any) añadido para evitar error en Vercel
         setListaVariedades(resParams.data.filter((p: any) => p.categoria === 'variedad'));
         setListaProveedores(resParams.data.filter((p: any) => p.categoria === 'proveedor'));
         setListaTurnos(resParams.data.filter((p: any) => p.categoria === 'turno'));
@@ -62,6 +71,15 @@ export default function ProcesoLlenado() {
     }
     inicializar();
   }, []);
+
+  // Si Next.js intenta pre-renderizar en el Build, esto lo detiene pacíficamente
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-10 text-center">
+        <p className="font-black text-gray-300 animate-pulse uppercase tracking-widest text-xs">Cargando Interfaz de Pesado...</p>
+      </div>
+    );
+  }
 
   const abrirCamara = async (tipo: keyof typeof fotos) => {
     const input = document.createElement('input');
@@ -107,7 +125,7 @@ export default function ProcesoLlenado() {
 
       const { error } = await supabase.from('procesos_batch').insert([{
         batch_id: batchId,
-        operador_id: datos.operador_id, // Usamos ID para integridad
+        operador_id: datos.operador_id,
         variedad: datos.variedad,
         proveedor: datos.proveedor,
         turno: datos.turno,
@@ -200,6 +218,7 @@ export default function ProcesoLlenado() {
         {/* FOTOS DE INICIO */}
         <div className="grid grid-cols-2 gap-3">
           <button 
+            type="button"
             onClick={() => abrirCamara('visor_cero')} 
             className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.visor_cero.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
           >
@@ -210,6 +229,7 @@ export default function ProcesoLlenado() {
           </button>
 
           <button 
+            type="button"
             onClick={() => abrirCamara('tanque_vacio')} 
             className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.tanque_vacio.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
           >
@@ -225,6 +245,7 @@ export default function ProcesoLlenado() {
           <label className="text-[10px] font-black text-red-700 uppercase ml-1">5. Cierre de Batch</label>
           <div className="flex gap-3">
             <button 
+              type="button"
               onClick={() => abrirCamara('visor_lleno')} 
               className={`w-1/3 aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center ${fotos.visor_lleno.url ? 'border-red-500 bg-white' : 'border-red-200 text-red-300'}`}
             >
@@ -248,6 +269,7 @@ export default function ProcesoLlenado() {
           ></textarea>
           
           <button 
+            type="button"
             onClick={() => abrirCamara('incidencia')} 
             className={`w-full p-4 rounded-2xl border-2 border-dashed text-[10px] font-black transition-all ${fotos.incidencia.url ? 'bg-amber-100 border-amber-500 text-amber-700' : 'border-amber-200 text-amber-400 bg-white'}`}
           >
