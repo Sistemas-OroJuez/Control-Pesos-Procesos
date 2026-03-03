@@ -1,11 +1,13 @@
 ﻿'use client';
-
-// ESTA LÍNEA ES LA SOLUCIÓN AL ERROR DE PRERENDER EN VERCEL
-export const dynamic = 'force-dynamic'; 
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 import { useState, useEffect } from 'react';
+// ... resto de imports
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+
+// ... el resto del código que te pasé antes
 
 export default function GestionUsuarios() {
   const router = useRouter();
