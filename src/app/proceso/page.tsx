@@ -16,7 +16,6 @@ export default function ProcesoLlenado() {
   const [listaTurnos, setListaTurnos] = useState<any[]>([]);
   const [listaOperadores, setListaOperadores] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  
   const [subiendoFoto, setSubiendoFoto] = useState<string | null>(null);
 
   const [datos, setDatos] = useState({
@@ -35,7 +34,6 @@ export default function ProcesoLlenado() {
     incidencia: { url: '' }
   });
 
-  // --- LÓGICA DE RECUPERACIÓN Y RESERVA DE ID ---
   useEffect(() => {
     setIsClient(true);
     
@@ -48,7 +46,6 @@ export default function ProcesoLlenado() {
       if (borradorBatch) setBatchId(borradorBatch);
       if (borradorFotos) setFotos(JSON.parse(borradorFotos));
 
-      // SI NO HAY UN BATCH EN CURSO, GENERAMOS UNO NUEVO Y LO RESERVAMOS EN LA DB
       if (!borradorBatch) {
         const hoy = new Date();
         const d = String(hoy.getDate()).padStart(2, '0');
@@ -56,7 +53,6 @@ export default function ProcesoLlenado() {
         const a = String(hoy.getFullYear()).slice(-2);
         const prefix = `EXT${d}${m}${a}`;
         
-        // Contamos cuántos hay (incluyendo los reservados)
         const { count } = await supabase
           .from('procesos_batch')
           .select('*', { count: 'exact', head: true })
@@ -65,7 +61,7 @@ export default function ProcesoLlenado() {
         const sequence = String((count || 0) + 1).padStart(2, '0');
         const nuevoId = `${prefix}${sequence}`;
         
-        // PASO CLAVE: Insertamos el registro inmediatamente para "apartar" el número
+        // RESERVA INICIAL: Insertamos solo el ID
         await supabase.from('procesos_batch').insert([{ 
           batch_id: nuevoId,
           fecha_hora_inicio: new Date().toISOString() 
@@ -115,7 +111,7 @@ export default function ProcesoLlenado() {
           const nuevaInfoFoto = { url: urlNube, hora: new Date().toISOString() };
           setFotos(prev => ({ ...prev, [tipo]: nuevaInfoFoto }));
         } catch (error) {
-          alert("Error al subir la imagen a la nube.");
+          alert("Error al subir la imagen");
         } finally {
           setSubiendoFoto(null);
         }
@@ -135,17 +131,11 @@ export default function ProcesoLlenado() {
     const getEcuadorFechaManual = (fechaISO?: string | null) => {
       const d = fechaISO ? new Date(fechaISO) : new Date();
       const pad = (n: number) => n < 10 ? '0' + n : n;
-      const year = d.getFullYear();
-      const month = pad(d.getMonth() + 1);
-      const day = pad(d.getDate());
-      const hours = pad(d.getHours());
-      const minutes = pad(d.getMinutes());
-      const seconds = pad(d.getSeconds());
-      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     };
 
+    // Preparamos los datos a actualizar (QUITAMOS batch_id del cuerpo para evitar el error de duplicado)
     const payload = {
-      batch_id: batchId,
       operador_id: datos.operador_id,
       variedad: datos.variedad,
       proveedor: datos.proveedor,
@@ -163,8 +153,11 @@ export default function ProcesoLlenado() {
       hora_foto_visor_lleno: getEcuadorFechaManual()
     };
 
-    // USAMOS UPSERT: Actualiza el registro que reservamos al inicio
-    const { error } = await supabase.from('procesos_batch').upsert([payload]);
+    // PASO CLAVE: Usamos .update() filtrando por el batch_id que ya existe
+    const { error } = await supabase
+      .from('procesos_batch')
+      .update(payload)
+      .eq('batch_id', batchId);
 
     if (error) {
       console.error(error);
@@ -176,10 +169,7 @@ export default function ProcesoLlenado() {
       localStorage.removeItem('draft_fotos');
       localStorage.removeItem('draft_batchId');
       
-      setDatos({
-        operador_id: '', variedad: '', proveedor: '', turno: '', peso_final: '', observaciones: ''
-      });
-
+      setDatos({ operador_id: '', variedad: '', proveedor: '', turno: '', peso_final: '', observaciones: '' });
       setFotos({
         visor_cero: { url: '', hora: null },
         tanque_vacio: { url: '', hora: null },
