@@ -191,8 +191,10 @@ const guardarBatch = async () => {
         incidencia: { url: '' }
       });
 
-      // Refrescar para generar nuevo ID de batch basado en el nuevo conteo de la DB
-      window.location.href = window.location.pathname;
+      // Refrescar con una pequeña pausa para asegurar que el conteo en la DB se actualice
+      setTimeout(() => {
+        window.location.href = window.location.pathname;
+      }, 800);
     }
     setLoading(false);
   };
