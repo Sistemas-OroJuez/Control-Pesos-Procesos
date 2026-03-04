@@ -35,7 +35,7 @@ export default function ProcesoLlenado() {
     incidencia: { url: '' }
   });
 
-  // --- LÓGICA DE RECUPERACIÓN Y RESERVA CON BÚSQUEDA DE ID MÁXIMO ---
+  // --- LÓGICA MEJORADA: BUSCA EL ÚLTIMO ID Y RESERVA ---
   useEffect(() => {
     setIsClient(true);
     
@@ -44,43 +44,50 @@ export default function ProcesoLlenado() {
       const borradorFotos = localStorage.getItem('draft_fotos');
       const borradorBatch = localStorage.getItem('draft_batchId');
 
+      // Limpiar si el storage tiene errores de basura anteriores
+      if (borradorBatch && (borradorBatch.includes('NaN') || borradorBatch === 'undefined')) {
+        localStorage.removeItem('draft_batchId');
+        window.location.reload();
+        return;
+      }
+
       if (borradorDatos) setDatos(JSON.parse(borradorDatos));
       if (borradorFotos) setFotos(JSON.parse(borradorFotos));
 
-      // Si ya hay un batch guardado en el teléfono, lo usamos
       if (borradorBatch) {
         setBatchId(borradorBatch);
       } else {
-        // SI NO HAY BATCH, GENERAMOS EL SIGUIENTE DISPONIBLE
         const hoy = new Date();
         const d = String(hoy.getDate()).padStart(2, '0');
         const m = String(hoy.getMonth() + 1).padStart(2, '0');
         const a = String(hoy.getFullYear()).slice(-2);
         const prefix = `EXT${d}${m}${a}`;
         
-        // 1. Buscamos el ID más alto registrado hoy
-        const { data: registrosHoy } = await supabase
+        // 1. Buscamos el ID más alto registrado hoy (No solo contamos, vemos el nombre)
+        const { data: ultimos } = await supabase
           .from('procesos_batch')
           .select('batch_id')
           .like('batch_id', `${prefix}%`)
           .order('batch_id', { ascending: false })
           .limit(1);
 
-        let siguienteNumero = 1;
+        let siguienteSecuencia = 1;
 
-        if (registrosHoy && registrosHoy.length > 0) {
-          // Extraemos los últimos 2 dígitos del ID más alto y sumamos 1
-          const ultimoId = registrosHoy[0].batch_id;
-          const ultimoSecuencial = parseInt(ultimoId.slice(-2));
-          siguienteNumero = ultimoSecuencial + 1;
+        if (ultimos && ultimos.length > 0) {
+          // Extraemos los últimos dígitos de forma segura
+          const ultimoIdStr = ultimos[0].batch_id;
+          const match = ultimoIdStr.match(/\d+$/);
+          if (match) {
+            siguienteSecuencia = parseInt(match[0]) + 1;
+          }
         }
 
         let registroExitoso = false;
         let idFinal = "";
 
-        // 2. Bucle de seguridad para insertar (Reserva el ID inmediatamente)
+        // 2. Intentamos insertar hasta que no haya choque de números
         while (!registroExitoso) {
-          idFinal = `${prefix}${String(siguienteNumero).padStart(2, '0')}`;
+          idFinal = `${prefix}${String(siguienteSecuencia).padStart(2, '0')}`;
           
           const { error: insertError } = await supabase
             .from('procesos_batch')
@@ -90,12 +97,11 @@ export default function ProcesoLlenado() {
             }]);
 
           if (!insertError) {
-            registroExitoso = true; // Guardado con éxito
+            registroExitoso = true;
           } else if (insertError.code === '23505') { 
-            // Si el código es 23505 (duplicado), intentamos con el siguiente
-            siguienteNumero++;
+            siguienteSecuencia++; // Si alguien ya tomó el 16, saltamos al 17
           } else {
-            console.error("Error al reservar ID:", insertError);
+            console.error("Error reserva:", insertError);
             break;
           }
         }
@@ -119,8 +125,9 @@ export default function ProcesoLlenado() {
     inicializar();
   }, []);
 
+  // Guardado automático en el navegador
   useEffect(() => {
-    if (isClient && batchId !== 'Cargando...') {
+    if (isClient && batchId !== 'Cargando...' && !batchId.includes('NaN')) {
       localStorage.setItem('draft_datos', JSON.stringify(datos));
       localStorage.setItem('draft_batchId', batchId);
       localStorage.setItem('draft_fotos', JSON.stringify(fotos));
@@ -167,6 +174,7 @@ export default function ProcesoLlenado() {
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     };
 
+    // EL PAYLOAD AHORA RELLENA LOS CAMPOS QUE ESTABAN NULL
     const payload = {
       operador_id: datos.operador_id,
       variedad: datos.variedad,
@@ -185,7 +193,7 @@ export default function ProcesoLlenado() {
       hora_foto_visor_lleno: getEcuadorFechaManual()
     };
 
-    // USAMOS UPDATE para completar el registro que ya existe (el que reservamos al inicio)
+    // USAMOS UPDATE porque el registro ya fue "reservado" (insertado) al cargar la página
     const { error } = await supabase
       .from('procesos_batch')
       .update(payload)
@@ -199,8 +207,8 @@ export default function ProcesoLlenado() {
       localStorage.removeItem('draft_datos');
       localStorage.removeItem('draft_fotos');
       localStorage.removeItem('draft_batchId');
+      localStorage.clear();
       
-      // Recargar la página limpia para el siguiente batch
       window.location.reload();
     }
     setLoading(false);
