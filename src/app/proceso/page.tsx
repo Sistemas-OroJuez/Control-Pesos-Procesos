@@ -132,15 +132,13 @@ const guardarBatch = async () => {
     setLoading(true);
 
     // FUNCIÓN DEFINITIVA PARA ECUADOR (Sin conversiones de Huso Horario)
-    const getEcuadorFechaManual = (fechaISO?: string | null) => {
+const getEcuadorFechaManual = (fechaISO?: string | null) => {
+      // Usamos la fecha del dispositivo tal cual, sin restarle nada
       const d = fechaISO ? new Date(fechaISO) : new Date();
       
-      // Ajuste manual de 5 horas
-      d.setHours(d.getHours() - 5);
-
       const pad = (n: number) => n < 10 ? '0' + n : n;
       
-      // Construimos el string manualmente: YYYY-MM-DD HH:mm:ss
+      // Construimos el string: YYYY-MM-DD HH:mm:ss
       const year = d.getFullYear();
       const month = pad(d.getMonth() + 1);
       const day = pad(d.getDate());
