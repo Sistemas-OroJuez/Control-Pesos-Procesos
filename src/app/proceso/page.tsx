@@ -16,7 +16,6 @@ export default function ProcesoLlenado() {
   const [listaTurnos, setListaTurnos] = useState<any[]>([]);
   const [listaOperadores, setListaOperadores] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  
   const [subiendoFoto, setSubiendoFoto] = useState<string | null>(null);
 
   const [datos, setDatos] = useState({
@@ -35,7 +34,6 @@ export default function ProcesoLlenado() {
     incidencia: { url: '' }
   });
 
-  // --- LÓGICA MEJORADA: BUSCA EL ÚLTIMO ID Y RESERVA ---
   useEffect(() => {
     setIsClient(true);
     
@@ -44,7 +42,6 @@ export default function ProcesoLlenado() {
       const borradorFotos = localStorage.getItem('draft_fotos');
       const borradorBatch = localStorage.getItem('draft_batchId');
 
-      // Limpiar si el storage tiene errores de basura anteriores
       if (borradorBatch && (borradorBatch.includes('NaN') || borradorBatch === 'undefined')) {
         localStorage.removeItem('draft_batchId');
         window.location.reload();
@@ -63,7 +60,6 @@ export default function ProcesoLlenado() {
         const a = String(hoy.getFullYear()).slice(-2);
         const prefix = `EXT${d}${m}${a}`;
         
-        // 1. Buscamos el ID más alto registrado hoy (No solo contamos, vemos el nombre)
         const { data: ultimos } = await supabase
           .from('procesos_batch')
           .select('batch_id')
@@ -72,23 +68,16 @@ export default function ProcesoLlenado() {
           .limit(1);
 
         let siguienteSecuencia = 1;
-
         if (ultimos && ultimos.length > 0) {
-          // Extraemos los últimos dígitos de forma segura
-          const ultimoIdStr = ultimos[0].batch_id;
-          const match = ultimoIdStr.match(/\d+$/);
-          if (match) {
-            siguienteSecuencia = parseInt(match[0]) + 1;
-          }
+          const match = ultimos[0].batch_id.match(/\d+$/);
+          if (match) siguienteSecuencia = parseInt(match[0]) + 1;
         }
 
         let registroExitoso = false;
         let idFinal = "";
 
-        // 2. Intentamos insertar hasta que no haya choque de números
         while (!registroExitoso) {
           idFinal = `${prefix}${String(siguienteSecuencia).padStart(2, '0')}`;
-          
           const { error: insertError } = await supabase
             .from('procesos_batch')
             .insert([{ 
@@ -99,13 +88,11 @@ export default function ProcesoLlenado() {
           if (!insertError) {
             registroExitoso = true;
           } else if (insertError.code === '23505') { 
-            siguienteSecuencia++; // Si alguien ya tomó el 16, saltamos al 17
+            siguienteSecuencia++;
           } else {
-            console.error("Error reserva:", insertError);
             break;
           }
         }
-
         setBatchId(idFinal);
         localStorage.setItem('draft_batchId', idFinal);
       }
@@ -125,7 +112,6 @@ export default function ProcesoLlenado() {
     inicializar();
   }, []);
 
-  // Guardado automático en el navegador
   useEffect(() => {
     if (isClient && batchId !== 'Cargando...' && !batchId.includes('NaN')) {
       localStorage.setItem('draft_datos', JSON.stringify(datos));
@@ -134,24 +120,20 @@ export default function ProcesoLlenado() {
     }
   }, [datos, fotos, batchId, isClient]);
 
-  if (!isClient) return null;
-
   const abrirCamara = async (tipo: keyof typeof fotos) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
     input.capture = 'environment';
-    
     input.onchange = async (e: any) => {
       const file = e.target.files[0];
       if (file) {
         setSubiendoFoto(tipo);
         try {
           const urlNube = await subirImagen(file, tipo);
-          const nuevaInfoFoto = { url: urlNube, hora: new Date().toISOString() };
-          setFotos(prev => ({ ...prev, [tipo]: nuevaInfoFoto }));
+          setFotos(prev => ({ ...prev, [tipo]: { url: urlNube, hora: new Date().toISOString() } }));
         } catch (error) {
-          alert("Error al subir la imagen.");
+          alert("Error al subir imagen");
         } finally {
           setSubiendoFoto(null);
         }
@@ -162,64 +144,61 @@ export default function ProcesoLlenado() {
 
   const guardarBatch = async () => {
     if (!datos.operador_id || !datos.variedad || !datos.proveedor || !datos.turno || !datos.peso_final) {
-      alert("Por favor complete todos los campos y tome las fotos requeridas");
+      alert("Faltan datos obligatorios.");
       return;
     }
 
     setLoading(true);
 
-    const getEcuadorFechaManual = (fechaISO?: string | null) => {
-      const d = fechaISO ? new Date(fechaISO) : new Date();
+    const getFmtFecha = (iso?: string | null) => {
+      const d = iso ? new Date(iso) : new Date();
       const pad = (n: number) => n < 10 ? '0' + n : n;
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     };
 
-    // EL PAYLOAD AHORA RELLENA LOS CAMPOS QUE ESTABAN NULL
+    // EL PAYLOAD: Aquí mandamos todo para que deje de estar NULL
     const payload = {
       operador_id: datos.operador_id,
       variedad: datos.variedad,
       proveedor: datos.proveedor,
       turno: datos.turno,
-      peso_final_digitado: datos.peso_final,
+      peso_final_digitado: parseFloat(datos.peso_final),
       observaciones: datos.observaciones,
-      fecha_hora_inicio: getEcuadorFechaManual(fotos.visor_cero.hora),
-      fecha_hora_fin: getEcuadorFechaManual(),
+      fecha_hora_inicio: getFmtFecha(fotos.visor_cero.hora),
+      fecha_hora_fin: getFmtFecha(),
       foto_visor_cero_url: fotos.visor_cero.url,
       foto_tanque_vacio_url: fotos.tanque_vacio.url,
       foto_visor_lleno_url: fotos.visor_lleno.url,
       foto_justificacion_url: fotos.incidencia.url,
-      hora_foto_visor_cero: getEcuadorFechaManual(fotos.visor_cero.hora),
-      hora_foto_tanque_vacio: getEcuadorFechaManual(fotos.tanque_vacio.hora),
-      hora_foto_visor_lleno: getEcuadorFechaManual()
+      hora_foto_visor_cero: getFmtFecha(fotos.visor_cero.hora),
+      hora_foto_tanque_vacio: getFmtFecha(fotos.tanque_vacio.hora),
+      hora_foto_visor_lleno: getFmtFecha()
     };
 
-    // USAMOS UPDATE porque el registro ya fue "reservado" (insertado) al cargar la página
+    // USAMOS UPDATE para llenar la fila que reservamos al inicio
     const { error } = await supabase
       .from('procesos_batch')
       .update(payload)
       .eq('batch_id', batchId);
 
     if (error) {
-      alert("Error al guardar: " + error.message);
+      alert("Error: " + error.message);
     } else {
-      alert("✅ BATCH GUARDADO CON ÉXITO");
-      
-      localStorage.removeItem('draft_datos');
-      localStorage.removeItem('draft_fotos');
-      localStorage.removeItem('draft_batchId');
+      alert("✅ GUARDADO EXITOSO");
       localStorage.clear();
-      
       window.location.reload();
     }
     setLoading(false);
   };
 
+  if (!isClient) return null;
+
   return (
     <div className="min-h-screen bg-gray-50 pb-28">
-      <header className="bg-red-700 p-4 text-white sticky top-0 z-10 shadow-lg flex justify-between items-center">
-        <button onClick={() => router.back()} className="text-xl">←</button>
+      <header className="bg-red-700 p-4 text-white sticky top-0 z-10 flex justify-between items-center shadow-lg">
+        <button onClick={() => router.back()}>←</button>
         <div className="text-center">
-          <h1 className="font-black text-xs tracking-widest uppercase">Proceso de Pesado</h1>
+          <h1 className="font-black text-xs uppercase tracking-widest">Pesado de Batch</h1>
           <p className="text-[10px] font-bold opacity-70">{batchId}</p>
         </div>
         <div className="w-6"></div>
@@ -227,132 +206,82 @@ export default function ProcesoLlenado() {
 
       <div className="p-5 space-y-5">
         <section className="bg-white p-5 rounded-3xl border shadow-sm space-y-4">
-          <div>
-            <label className="text-[10px] font-black text-red-700 uppercase ml-1">1. Seleccione Operador</label>
-            <select 
-              className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
-              value={datos.operador_id}
-              onChange={e => setDatos({...datos, operador_id: e.target.value})}
-            >
-              <option value="">ELIJA UN NOMBRE...</option>
-              {listaOperadores.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-            </select>
-          </div>
+          <select 
+            className="w-full p-4 rounded-2xl border-2 border-gray-100 font-bold bg-gray-50 outline-none focus:border-red-700"
+            value={datos.operador_id}
+            onChange={e => setDatos({...datos, operador_id: e.target.value})}
+          >
+            <option value="">OPERADOR...</option>
+            {listaOperadores.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+          </select>
 
-          <div className="grid grid-cols-1 gap-4">
-            <div>
-              <label className="text-[10px] font-black text-red-700 uppercase ml-1">2. Variedad de Palma</label>
-              <select 
-                className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
-                value={datos.variedad}
-                onChange={e => setDatos({...datos, variedad: e.target.value})}
-              >
-                <option value="">SELECCIONE...</option>
-                {listaVariedades.map(v => <option key={v.id} value={v.valor}>{v.valor}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] font-black text-red-700 uppercase ml-1">3. Proveedor MP</label>
-              <select 
-                className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
-                value={datos.proveedor}
-                onChange={e => setDatos({...datos, proveedor: e.target.value})}
-              >
-                <option value="">SELECCIONE...</option>
-                {listaProveedores.map(p => <option key={p.id} value={p.valor}>{p.valor}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] font-black text-red-700 uppercase ml-1">4. Turno de Trabajo</label>
-              <select 
-                className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
-                value={datos.turno}
-                onChange={e => setDatos({...datos, turno: e.target.value})}
-              >
-                <option value="">SELECCIONE TURNO...</option>
-                {listaTurnos.map(t => <option key={t.id} value={t.valor}>{t.valor}</option>)}
-              </select>
-            </div>
-          </div>
+          <select 
+            className="w-full p-4 rounded-2xl border-2 border-gray-100 font-bold bg-gray-50"
+            value={datos.variedad}
+            onChange={e => setDatos({...datos, variedad: e.target.value})}
+          >
+            <option value="">VARIEDAD...</option>
+            {listaVariedades.map(v => <option key={v.id} value={v.valor}>{v.valor}</option>)}
+          </select>
+
+          <select 
+            className="w-full p-4 rounded-2xl border-2 border-gray-100 font-bold bg-gray-50"
+            value={datos.proveedor}
+            onChange={e => setDatos({...datos, proveedor: e.target.value})}
+          >
+            <option value="">PROVEEDOR...</option>
+            {listaProveedores.map(p => <option key={p.id} value={p.valor}>{p.valor}</option>)}
+          </select>
+
+          <select 
+            className="w-full p-4 rounded-2xl border-2 border-gray-100 font-bold bg-gray-50"
+            value={datos.turno}
+            onChange={e => setDatos({...datos, turno: e.target.value})}
+          >
+            <option value="">TURNO...</option>
+            {listaTurnos.map(t => <option key={t.id} value={t.valor}>{t.valor}</option>)}
+          </select>
         </section>
 
         <div className="grid grid-cols-2 gap-3">
-          <button 
-            type="button"
-            disabled={!!subiendoFoto}
-            onClick={() => abrirCamara('visor_cero')} 
-            className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.visor_cero.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
-          >
-            {subiendoFoto === 'visor_cero' ? <span className="text-[10px] animate-pulse">SUBIENDO...</span> : 
-             fotos.visor_cero.url ? <img src={fotos.visor_cero.url} className="w-full h-full object-cover rounded-2xl" /> : <>
-              <span className="text-3xl mb-1">⚖️</span>
-              <span className="text-[9px] font-black uppercase">Visor en Cero</span>
-            </>}
+          <button onClick={() => abrirCamara('visor_cero')} className={`aspect-square rounded-3xl border-2 border-dashed flex items-center justify-center overflow-hidden ${fotos.visor_cero.url ? 'border-green-500' : 'border-gray-200 bg-white text-gray-400'}`}>
+            {subiendoFoto === 'visor_cero' ? '...' : fotos.visor_cero.url ? <img src={fotos.visor_cero.url} className="w-full h-full object-cover" /> : '⚖️ Visor Cero'}
           </button>
-
-          <button 
-            type="button"
-            disabled={!!subiendoFoto}
-            onClick={() => abrirCamara('tanque_vacio')} 
-            className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.tanque_vacio.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
-          >
-            {subiendoFoto === 'tanque_vacio' ? <span className="text-[10px] animate-pulse">SUBIENDO...</span> :
-             fotos.tanque_vacio.url ? <img src={fotos.tanque_vacio.url} className="w-full h-full object-cover rounded-2xl" /> : <>
-              <span className="text-3xl mb-1">🛢️</span>
-              <span className="text-[9px] font-black uppercase">Tanque Vacío</span>
-            </>}
+          <button onClick={() => abrirCamara('tanque_vacio')} className={`aspect-square rounded-3xl border-2 border-dashed flex items-center justify-center overflow-hidden ${fotos.tanque_vacio.url ? 'border-green-500' : 'border-gray-200 bg-white text-gray-400'}`}>
+            {subiendoFoto === 'tanque_vacio' ? '...' : fotos.tanque_vacio.url ? <img src={fotos.tanque_vacio.url} className="w-full h-full object-cover" /> : '🛢️ Tanque Vacío'}
           </button>
         </div>
 
-        <section className="bg-red-50 p-5 rounded-3xl border border-red-100 space-y-3">
-          <label className="text-[10px] font-black text-red-700 uppercase ml-1">5. Cierre de Batch</label>
-          <div className="flex gap-3">
-            <button 
-              type="button"
-              disabled={!!subiendoFoto}
-              onClick={() => abrirCamara('visor_lleno')} 
-              className={`w-1/3 aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center ${fotos.visor_lleno.url ? 'border-red-500 bg-white' : 'border-red-200 text-red-300'}`}
-            >
-              {subiendoFoto === 'visor_lleno' ? <span className="text-[10px] animate-pulse">...</span> :
-               fotos.visor_lleno.url ? <img src={fotos.visor_lleno.url} className="w-full h-full object-cover rounded-xl" /> : <span className="text-2xl">📸</span>}
-            </button>
-            <input 
-              type="number" 
-              placeholder="PESO FINAL"
-              value={datos.peso_final}
-              className="w-2/3 p-4 rounded-2xl border-2 border-red-100 text-3xl font-black text-red-700 outline-none placeholder:text-red-200 text-center"
-              onChange={e => setDatos({...datos, peso_final: e.target.value})}
-            />
-          </div>
+        <section className="bg-red-50 p-5 rounded-3xl border border-red-100 flex gap-3">
+          <button onClick={() => abrirCamara('visor_lleno')} className="w-1/3 aspect-square bg-white border-2 border-dashed rounded-2xl flex items-center justify-center overflow-hidden">
+            {fotos.visor_lleno.url ? <img src={fotos.visor_lleno.url} className="w-full h-full object-cover" /> : '📸'}
+          </button>
+          <input 
+            type="number" placeholder="PESO" 
+            className="w-2/3 p-4 rounded-2xl text-3xl font-black text-center text-red-700 outline-none"
+            value={datos.peso_final}
+            onChange={e => setDatos({...datos, peso_final: e.target.value})}
+          />
         </section>
 
-        <div className="space-y-3">
-          <textarea 
-            placeholder="Observaciones..." 
-            value={datos.observaciones}
-            className="w-full p-4 border-2 rounded-3xl bg-white h-20 text-sm font-semibold outline-none focus:border-red-700"
-            onChange={e=>setDatos({...datos, observaciones: e.target.value})}
-          ></textarea>
-          
-          <button 
-            type="button"
-            disabled={!!subiendoFoto}
-            onClick={() => abrirCamara('incidencia')} 
-            className={`w-full p-4 rounded-2xl border-2 border-dashed text-[10px] font-black transition-all ${fotos.incidencia.url ? 'bg-amber-100 border-amber-500 text-amber-700' : 'border-amber-200 text-amber-400 bg-white'}`}
-          >
-            {subiendoFoto === 'incidencia' ? 'CARGANDO...' : 
-             fotos.incidencia.url ? '✓ EVIDENCIA DE NOVEDAD LISTA' : '+ FOTO JUSTIFICACIÓN / NOVEDAD'}
-          </button>
-        </div>
+        <textarea 
+          placeholder="Observaciones..." 
+          className="w-full p-4 border-2 rounded-3xl h-20 outline-none"
+          value={datos.observaciones}
+          onChange={e=>setDatos({...datos, observaciones: e.target.value})}
+        ></textarea>
+        
+        <button onClick={() => abrirCamara('incidencia')} className={`w-full p-4 rounded-2xl border-2 border-dashed text-[10px] font-black ${fotos.incidencia.url ? 'bg-amber-100 border-amber-500 text-amber-700' : 'bg-white text-amber-400'}`}>
+          {fotos.incidencia.url ? '✓ EVIDENCIA LISTA' : '+ FOTO JUSTIFICACIÓN'}
+        </button>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-gray-100">
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t">
         <button 
-          onClick={guardarBatch} 
-          disabled={loading || !!subiendoFoto} 
-          className="w-full bg-red-700 text-white py-5 rounded-2xl font-black text-sm tracking-[4px] shadow-2xl active:scale-95 transition-all disabled:bg-gray-400"
+          onClick={guardarBatch} disabled={loading || !!subiendoFoto}
+          className="w-full bg-red-700 text-white py-5 rounded-2xl font-black tracking-widest shadow-xl disabled:bg-gray-400"
         >
-          {loading ? 'SINCRONIZANDO...' : 'GUARDAR PESADA'}
+          {loading ? 'GUARDANDO...' : 'GUARDAR PESADA'}
         </button>
       </div>
     </div>
