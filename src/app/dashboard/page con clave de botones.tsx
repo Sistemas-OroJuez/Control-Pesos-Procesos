@@ -1,36 +1,18 @@
 ﻿'use client';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function Dashboard() {
   const router = useRouter();
   
-  // Estado inicializado desde localStorage para persistencia
+  // Estado para controlar si se desbloquearon los botones de admin
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Efecto para cargar el estado guardado al iniciar
-  useEffect(() => {
-    const savedAdminStatus = localStorage.getItem('orj_admin_access');
-    if (savedAdminStatus === 'true') {
-      setIsAdmin(true);
-    }
-  }, []);
-
-  // Función para pedir la clave y guardarla en el navegador
+  // Función para pedir la clave al hacer clic en el logo
   const handleLogoClick = () => {
-    if (isAdmin) {
-      const confirmLock = confirm("¿Desea cerrar el modo administrador?");
-      if (confirmLock) {
-        setIsAdmin(false);
-        localStorage.removeItem('orj_admin_access');
-      }
-      return;
-    }
-
     const password = prompt("Ingrese clave de administrador para desbloquear funciones:");
-    if (password === 'orj2026') { 
+    if (password === 'orj2026') { // Aquí puedes cambiar la clave
       setIsAdmin(true);
-      localStorage.setItem('orj_admin_access', 'true'); // Persistencia activada
       alert("Funciones de administrador desbloqueadas.");
     } else if (password !== null) {
       alert("Clave incorrecta.");
@@ -46,19 +28,22 @@ export default function Dashboard() {
     { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
   ];
 
+  // Filtramos: Si NO es admin, solo mostramos los que no son adminOnly
   const filteredModules = modules.filter(mod => isAdmin ? true : !mod.adminOnly);
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* HEADER CORPORATIVO */}
       <header className="bg-white shadow-md border-b-4 border-red-700 p-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4">
+            {/* El logo ahora tiene el evento de clic para pedir la clave */}
             <img 
               src="/logo-orojuez.jpg" 
               alt="OroJuez Logo" 
-              className={`h-16 w-auto object-contain cursor-help transition-opacity ${isAdmin ? 'opacity-100' : 'opacity-80'}`}
+              className="h-16 w-auto object-contain cursor-help"
               onClick={handleLogoClick}
-              title={isAdmin ? "Click para bloquear" : "Click para funciones especiales"}
+              title="Click para funciones especiales"
             />
             <div className="h-10 w-[2px] bg-gray-200 hidden md:block"></div>
             <div>
@@ -66,16 +51,13 @@ export default function Dashboard() {
                 OROJUEZ <span className="text-red-700">SA</span>
               </h1>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">
-                {isAdmin ? '🛡️ MODO ADMINISTRADOR' : 'Control de Producción'}
+                {isAdmin ? 'MODO ADMINISTRADOR' : 'Control de Producción'}
               </p>
             </div>
           </div>
           
           <button 
-            onClick={() => {
-              localStorage.removeItem('orj_admin_access'); // Limpiar al salir
-              router.push('/');
-            }}
+            onClick={() => router.push('/')}
             className="bg-gray-800 hover:bg-black text-white px-5 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2 shadow-lg"
           >
             <span>🚪</span> SALIR
@@ -83,6 +65,7 @@ export default function Dashboard() {
         </div>
       </header>
 
+      {/* CUADRÍCULA DE MÓDULOS */}
       <main className="max-w-6xl mx-auto p-6 md:p-12">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredModules.map((mod) => (
