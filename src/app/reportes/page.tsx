@@ -2,34 +2,71 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import * as XLSX from 'xlsx';
 
-export default function ReporteGeneral() {
+export default function ReporteGeneralCompleto() {
   const router = useRouter();
   const [datos, setDatos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-
-  const [filtros, setFiltros] = useState({
-    fechaDesde: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    fechaHasta: new Date().toISOString().split('T')[0]
+  
+  // Catálogos para los Selects
+  const [listas, setListas] = useState({
+    localidades: [],
+    operadores: [],
+    variedades: ['GUINENSIS', 'HIBRIDO', 'OTRA'], // Basado en tu SQL
+    proveedores: []
   });
 
-  useEffect(() => { consultar(); }, []);
+  // Estado Maestro de Filtros
+  const [filtros, setFiltros] = useState({
+    desde: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    hasta: new Date().toISOString().split('T')[0],
+    localidadId: '',
+    operadorId: '',
+    variedad: '',
+    proveedor: ''
+  });
+
+  useEffect(() => {
+    cargarCatalogos();
+    consultar();
+  }, []);
+
+  async function cargarCatalogos() {
+    const { data: loc } = await supabase.from('localidades').select('*').order('nombre');
+    const { data: ope } = await supabase.from('operadores').select('*').order('nombre');
+    // Sacar proveedores únicos de la tabla para no hardcodear
+    const { data: prov } = await supabase.from('procesos_batch').select('proveedor');
+    const proveedoresUnicos = Array.from(new Set(prov?.map(p => p.proveedor).filter(Boolean)));
+
+    setListas(prev => ({ 
+      ...prev, 
+      localidades: loc || [], 
+      operadores: ope || [],
+      proveedores: proveedoresUnicos as any
+    }));
+  }
 
   async function consultar() {
     setLoading(true);
-    // Traemos TODOS los campos explícitamente para asegurar los links
-    const { data } = await supabase
+    let query = supabase
       .from('procesos_batch')
       .select(`
-        id, created_at, batch_id, peso_final_digitado, observaciones,
-        foto_visor_inicio, foto_tanque_vacio, foto_visor_final, foto_observacion,
-        variedad, proveedor, turno,
-        operadores (nombre, sitios (nombre))
+        *,
+        operadores!inner (
+          id, nombre, 
+          sitios!inner (id, nombre, localidad_id)
+        )
       `)
-      .gte('created_at', `${filtros.fechaDesde}T00:00:00`)
-      .lte('created_at', `${filtros.fechaHasta}T23:59:59`)
-      .order('created_at', { ascending: false });
+      .gte('created_at', `${filtros.desde}T00:00:00`)
+      .lte('created_at', `${filtros.hasta}T23:59:59`);
+
+    // Aplicar filtros lógicos
+    if (filtros.localidadId) query = query.eq('operadores.sitios.localidad_id', filtros.localidadId);
+    if (filtros.operadorId) query = query.eq('operador_id', filtros.operadorId);
+    if (filtros.variedad) query = query.eq('variedad', filtros.variedad);
+    if (filtros.proveedor) query = query.eq('proveedor', filtros.proveedor);
+
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (data) setDatos(data);
     setLoading(false);
@@ -37,69 +74,105 @@ export default function ReporteGeneral() {
 
   return (
     <div className="min-h-screen bg-gray-100 p-4">
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-white p-6 rounded-3xl shadow-lg border-b-8 border-red-700 mb-6 flex justify-between items-center">
-          <h1 className="text-2xl font-black text-red-700 uppercase italic">Reporte General de Pesajes</h1>
-          <div className="flex gap-2">
-            <button onClick={() => {/* Excel Logic */}} className="bg-green-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase">Exportar Excel</button>
-            <button onClick={() => router.push('/dashboard')} className="bg-gray-200 px-4 py-2 rounded-xl font-bold text-xs uppercase text-gray-600">Volver</button>
+      <div className="max-w-[1600px] mx-auto space-y-4">
+        
+        {/* BARRA DE FILTROS AVANZADA */}
+        <div className="bg-white p-6 rounded-3xl shadow-lg border-b-4 border-red-700">
+          <h2 className="text-red-700 font-black uppercase text-xs mb-4 italic tracking-widest">Filtros de Auditoría</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] font-black text-gray-400">FECHA INICIO</label>
+              <input type="date" className="p-2 border rounded-xl text-xs font-bold" value={filtros.desde} onChange={e => setFiltros({...filtros, desde: e.target.value})} />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] font-black text-gray-400">FECHA FIN</label>
+              <input type="date" className="p-2 border rounded-xl text-xs font-bold" value={filtros.hasta} onChange={e => setFiltros({...filtros, hasta: e.target.value})} />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] font-black text-gray-400">LOCALIDAD</label>
+              <select className="p-2 border rounded-xl text-xs font-bold" value={filtros.localidadId} onChange={e => setFiltros({...filtros, localidadId: e.target.value})}>
+                <option value="">TODAS</option>
+                {listas.localidades.map((l:any) => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] font-black text-gray-400">OPERADOR</label>
+              <select className="p-2 border rounded-xl text-xs font-bold" value={filtros.operadorId} onChange={e => setFiltros({...filtros, operadorId: e.target.value})}>
+                <option value="">TODOS</option>
+                {listas.operadores.map((o:any) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] font-black text-gray-400">VARIEDAD</label>
+              <select className="p-2 border rounded-xl text-xs font-bold" value={filtros.variedad} onChange={e => setFiltros({...filtros, variedad: e.target.value})}>
+                <option value="">TODAS</option>
+                {listas.variedades.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+
+            <button onClick={consultar} className="bg-red-700 text-white rounded-xl font-black text-[10px] uppercase h-[38px] self-end hover:bg-red-800 transition-all shadow-md">
+              Aplicar Filtros
+            </button>
           </div>
         </div>
 
-        <div className="bg-white rounded-3xl shadow-xl overflow-hidden border">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-gray-800 text-white text-[10px] uppercase font-black">
-              <tr>
-                <th className="p-4">Batch / Fecha</th>
-                <th className="p-4">Sitio / Operador</th>
-                <th className="p-4 text-center">Auditoría Visual (FOTOS)</th>
-                <th className="p-4 text-right">Peso Kg</th>
-                <th className="p-4">Novedad / Justificación</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {datos.map((reg) => (
-                <tr key={reg.id} className="hover:bg-red-50 transition-colors">
-                  <td className="p-4">
-                    <p className="font-black text-red-700 text-base">#{reg.batch_id}</p>
-                    <p className="text-[10px] text-gray-400 font-bold">{new Date(reg.created_at).toLocaleString()}</p>
-                  </td>
-                  <td className="p-4">
-                    <p className="font-black text-gray-800 uppercase">{reg.operadores?.sitios?.nombre}</p>
-                    <p className="text-[10px] text-gray-500 font-bold">{reg.operadores?.nombre} • {reg.turno}</p>
-                  </td>
-                  
-                  {/* NOMENCLATURA SOLICITADA */}
-                  <td className="p-4">
-                    <div className="flex gap-2 justify-center">
-                      {reg.foto_visor_inicio && (
-                        <a href={reg.foto_visor_inicio} target="_blank" className="bg-blue-600 hover:bg-blue-800 text-white px-3 py-2 rounded-lg font-black text-[9px] uppercase shadow-md transition-all">Visor 0</a>
-                      )}
-                      {reg.foto_tanque_vacio && (
-                        <a href={reg.foto_tanque_vacio} target="_blank" className="bg-blue-600 hover:bg-blue-800 text-white px-3 py-2 rounded-lg font-black text-[9px] uppercase shadow-md transition-all">Tq Vacio</a>
-                      )}
-                      {reg.foto_visor_final && (
-                        <a href={reg.foto_visor_final} target="_blank" className="bg-blue-600 hover:bg-blue-800 text-white px-3 py-2 rounded-lg font-black text-[9px] uppercase shadow-md transition-all">Visor con Peso</a>
-                      )}
-                    </div>
-                  </td>
-
-                  <td className="p-4 text-right">
-                    <p className="text-xl font-black text-red-700">{reg.peso_final_digitado} <span className="text-xs">kg</span></p>
-                  </td>
-
-                  <td className="p-4">
-                    <div className="flex flex-col gap-1">
-                      <p className="text-[10px] text-gray-500 italic max-w-[150px]">{reg.observaciones || '-'}</p>
-                      {reg.foto_observacion && (
-                        <a href={reg.foto_observacion} target="_blank" className="text-orange-600 font-black text-[9px] underline uppercase">Justificación Novedad</a>
-                      )}
-                    </div>
-                  </td>
+        {/* TABLA DE RESULTADOS */}
+        <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-gray-200">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[10px] text-left">
+              <thead className="bg-slate-900 text-white uppercase font-black">
+                <tr>
+                  <th className="p-4 border-r border-slate-700">Batch / Info</th>
+                  <th className="p-4 border-r border-slate-700">Sitio / Operador</th>
+                  <th className="p-4 border-r border-slate-700">Variedad / Proveedor</th>
+                  <th className="p-4 text-center border-r border-slate-700">Fotos de Auditoría</th>
+                  <th className="p-4 text-right border-r border-slate-700">Peso Kg</th>
+                  <th className="p-4">Novedades</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {datos.map((reg) => (
+                  <tr key={reg.id} className="hover:bg-red-50/50 transition-colors">
+                    <td className="p-4">
+                      <p className="font-black text-red-700 text-sm">#{reg.batch_id}</p>
+                      <p className="text-gray-400 font-bold">{new Date(reg.created_at).toLocaleString()}</p>
+                      <p className="bg-gray-100 text-[8px] px-1 rounded inline-block">{reg.turno}</p>
+                    </td>
+                    <td className="p-4 uppercase font-bold">
+                      <p className="text-slate-800">{reg.operadores?.sitios?.nombre}</p>
+                      <p className="text-gray-400 text-[9px]">{reg.operadores?.nombre}</p>
+                    </td>
+                    <td className="p-4 uppercase">
+                      <p className="font-black text-slate-700">{reg.variedad}</p>
+                      <p className="text-gray-500 font-bold text-[9px]">{reg.proveedor}</p>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex gap-1 justify-center">
+                        {reg.foto_visor_cero_url && <a href={reg.foto_visor_cero_url} target="_blank" className="bg-blue-600 text-white px-2 py-1.5 rounded-lg font-black text-[8px] uppercase shadow-sm">Visor 0</a>}
+                        {reg.foto_tanque_vacio_url && <a href={reg.foto_tanque_vacio_url} target="_blank" className="bg-blue-600 text-white px-2 py-1.5 rounded-lg font-black text-[8px] uppercase shadow-sm">Tq Vacio</a>}
+                        {reg.foto_visor_lleno_url && <a href={reg.foto_visor_lleno_url} target="_blank" className="bg-blue-600 text-white px-2 py-1.5 rounded-lg font-black text-[8px] uppercase shadow-sm">Visor Peso</a>}
+                      </div>
+                    </td>
+                    <td className="p-4 text-right font-black text-red-700 text-base border-l">
+                      {reg.peso_final_digitado}
+                    </td>
+                    <td className="p-4">
+                      <p className="italic text-gray-500 line-clamp-2 mb-1">{reg.observaciones || '-'}</p>
+                      {reg.foto_justificacion_url && (
+                        <a href={reg.foto_justificacion_url} target="_blank" className="text-orange-600 font-black underline uppercase text-[8px]">Ver Justificación</a>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {datos.length === 0 && <div className="p-20 text-center font-black text-gray-300 uppercase tracking-widest bg-gray-50">No hay registros con estos filtros</div>}
         </div>
       </div>
     </div>
