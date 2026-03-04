@@ -24,21 +24,31 @@ export default function ParametrosAdmin() {
     setNuevoValor('');
     setVinculoId('');
 
-    if (tab === 'sitio') {
-      const { data: dataSitios } = await supabase.from('sitios').select('*, localidades(nombre)').order('nombre');
-      const { data: dataLoc } = await supabase.from('localidades').select('*').order('nombre');
-      if (dataSitios) setLista(dataSitios);
-      if (dataLoc) setAuxiliares(dataLoc);
-    } 
-    else if (tab === 'operador') {
-      const { data: dataOpe } = await supabase.from('operadores').select('*, sitios(nombre)').order('nombre');
-      const { data: dataSit } = await supabase.from('sitios').select('*').order('nombre');
-      if (dataOpe) setLista(dataOpe);
-      if (dataSit) setAuxiliares(dataSit);
-    }
-    else {
-      const { data } = await supabase.from('parametros').select('*').eq('categoria', tab).order('valor');
-      if (data) setLista(data);
+    try {
+      if (tab === 'sitio') {
+        const { data: dataSitios } = await supabase.from('sitios').select('*, localidades(nombre)').order('nombre');
+        const { data: dataLoc } = await supabase.from('localidades').select('*').order('nombre');
+        if (dataSitios) setLista(dataSitios);
+        if (dataLoc) setAuxiliares(dataLoc);
+      } 
+      else if (tab === 'operador') {
+        const { data: dataOpe } = await supabase.from('operadores').select('*, sitios(nombre)').order('nombre');
+        const { data: dataSit } = await supabase.from('sitios').select('*').order('nombre');
+        if (dataOpe) setLista(dataOpe);
+        if (dataSit) setAuxiliares(dataSit);
+      }
+      else {
+        // Consulta exacta a la tabla parametros por categoría
+        const { data, error } = await supabase
+          .from('parametros')
+          .select('*')
+          .eq('categoria', tab)
+          .order('valor');
+        if (data) setLista(data);
+        if (error) console.error("Error cargando parámetros:", error);
+      }
+    } catch (err) {
+      console.error("Error en cargarDatos:", err);
     }
     setLoading(false);
   }
@@ -48,37 +58,51 @@ export default function ParametrosAdmin() {
     setLoading(true);
 
     try {
+      let error;
       if (tab === 'sitio') {
-        if (!vinculoId) return alert("Seleccione una localidad");
+        if (!vinculoId) { setLoading(false); return alert("Seleccione una localidad"); }
         const payload = { nombre: nuevoValor.toUpperCase(), localidad_id: vinculoId, activo: true };
-        editandoId 
+        const res = editandoId 
           ? await supabase.from('sitios').update(payload).eq('id', editandoId) 
           : await supabase.from('sitios').insert([payload]);
+        error = res.error;
       } 
       else if (tab === 'operador') {
-        if (!vinculoId) return alert("Seleccione un sitio");
+        if (!vinculoId) { setLoading(false); return alert("Seleccione un sitio"); }
         const payload = { nombre: nuevoValor.toUpperCase(), sitio_id: vinculoId, activo: true };
-        editandoId 
+        const res = editandoId 
           ? await supabase.from('operadores').update(payload).eq('id', editandoId) 
           : await supabase.from('operadores').insert([payload]);
+        error = res.error;
       }
       else {
+        // LOGICA PARA PARAMETROS (Proveedor, Variedad, Turno)
         if (editandoId) {
-          await supabase.from('parametros').update({ valor: nuevoValor.toUpperCase() }).eq('id', editandoId);
+          const res = await supabase
+            .from('parametros')
+            .update({ valor: nuevoValor.toUpperCase() })
+            .eq('id', editandoId);
+          error = res.error;
         } else {
-          await supabase.from('parametros').insert([{ 
-            valor: nuevoValor.toUpperCase(), 
-            categoria: tab, 
-            activo: true 
-          }]);
+          const res = await supabase
+            .from('parametros')
+            .insert([{ 
+              valor: nuevoValor.toUpperCase(), 
+              categoria: tab, // Esto guarda 'proveedor', 'variedad' o 'turno'
+              activo: true 
+            }]);
+          error = res.error;
         }
       }
       
-      alert("✅ Guardado correctamente");
-      cargarDatos();
-    } catch (error) {
-      console.error(error);
-      alert("Error al procesar la solicitud");
+      if (error) {
+        alert("Error de base de datos: " + error.message);
+      } else {
+        alert("✅ Registro guardado con éxito");
+        await cargarDatos(); // Recarga la lista inmediatamente
+      }
+    } catch (err: any) {
+      alert("Error crítico: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -150,7 +174,7 @@ export default function ParametrosAdmin() {
               disabled={loading}
               className="w-full bg-slate-900 text-white p-4 rounded-2xl font-black text-xs uppercase hover:bg-red-700 transition-all"
             >
-              {editandoId ? 'Actualizar' : 'Guardar'}
+              {loading ? 'Procesando...' : (editandoId ? 'Actualizar' : 'Guardar')}
             </button>
           </div>
         </div>
