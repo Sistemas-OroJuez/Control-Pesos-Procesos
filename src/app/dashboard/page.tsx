@@ -11,38 +11,34 @@ export default function Dashboard() {
   useEffect(() => {
     async function getProfile() {
       try {
-        // 1. Obtener la sesión de forma inmediata
+        // Obtenemos la sesión de forma silenciosa
         const { data: { session } } = await supabase.auth.getSession();
         
-        if (!session) {
-          router.push('/');
-          return;
-        }
-
-        // 2. Buscar el rol en la tabla empleados usando el email de la sesión
-        const { data: empleado, error } = await supabase
-          .from('empleados')
-          .select('rol')
-          .eq('email', session.user.email)
-          .maybeSingle(); // Usamos maybeSingle para evitar errores si no encuentra nada
-        
-        if (empleado) {
-          setUserRole(empleado.rol.toLowerCase());
-        } else {
-          // Si no encuentra el empleado, le damos el rol más bajo por seguridad
-          setUserRole('operador');
+        // Si no hay sesión, NO redirigimos aquí para evitar el bucle que te bota.
+        // Solo intentamos buscar el perfil si existe el usuario.
+        if (session?.user) {
+          const { data: empleado } = await supabase
+            .from('empleados')
+            .select('rol')
+            .eq('email', session.user.email)
+            .maybeSingle();
+          
+          if (empleado) {
+            setUserRole(empleado.rol.toLowerCase());
+          } else {
+            setUserRole('operador'); // Por defecto si no está en la tabla
+          }
         }
       } catch (error) {
-        console.error("Error en dashboard:", error);
+        console.error("Error silencioso:", error);
         setUserRole('operador');
       } finally {
         setLoading(false);
       }
     }
     getProfile();
-  }, [router]);
+  }, []);
 
-  // Lista maestra de módulos
   const allModules = [
     { id: 3, name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', adminOnly: false },
     { id: 4, name: 'Reportes Generales', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes', adminOnly: false },
@@ -52,8 +48,7 @@ export default function Dashboard() {
     { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
   ];
 
-  // FILTRADO: Si el rol NO es administrador, eliminamos los protegidos
-  // Esto incluye el caso donde el rol es 'operador' o aún no ha cargado
+  // Filtro estricto: Solo admin ve adminOnly. Los demás (incluyendo null/loading) solo ven lo básico.
   const modules = allModules.filter(mod => {
     if (userRole === 'administrador') return true;
     return !mod.adminOnly;
@@ -76,17 +71,17 @@ export default function Dashboard() {
           <div className="flex items-center gap-4">
             <div className="text-right mr-2">
                <p className="text-[10px] font-bold text-red-700 uppercase">
-                  {loading ? 'Sincronizando...' : (userRole === 'administrador' ? '🛡️ Admin' : '👷 Operador')}
+                  {loading ? 'Verificando...' : (userRole === 'administrador' ? '🛡️ Admin' : '👷 Operador')}
                </p>
             </div>
             <button 
               onClick={async () => {
                 await supabase.auth.signOut();
-                router.push('/');
+                window.location.href = '/'; // Redirección forzada solo al salir
               }}
-              className="bg-gray-800 hover:bg-black text-white px-5 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2 shadow-lg"
+              className="bg-gray-800 text-white px-5 py-2 rounded-lg font-bold text-xs shadow-lg"
             >
-              <span>🚪</span> SALIR
+              SALIR
             </button>
           </div>
         </div>
@@ -98,20 +93,16 @@ export default function Dashboard() {
             <button
               key={mod.id}
               onClick={() => router.push(mod.route)}
-              className={mod.color + " p-10 rounded-2xl shadow-sm border border-gray-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center group"}
+              className={mod.color + " p-10 rounded-2xl shadow-sm border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center group"}
             >
               <span className="text-4xl mb-4 group-hover:scale-110 transition-transform">{mod.icon}</span>
-              <span className="font-bold uppercase text-[11px] tracking-widest text-center px-2 leading-tight">
+              <span className="font-bold uppercase text-[11px] tracking-widest text-center px-2">
                 {mod.name}
               </span>
             </button>
           ))}
         </div>
       </main>
-
-      <footer className="fixed bottom-0 w-full p-4 text-center bg-gray-100/80 backdrop-blur-sm">
-        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">© 2026 OROJUEZ - Sistema de Control Operativo</p>
-      </footer>
     </div>
   );
 }
