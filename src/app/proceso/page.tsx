@@ -131,14 +131,24 @@ const guardarBatch = async () => {
 
     setLoading(true);
 
-    // NUEVA FUNCIÓN: Genera la fecha en formato local de Ecuador sin convertir a UTC
-    const getEcuadorFecha = (fechaManual?: string | null) => {
-      const d = fechaManual ? new Date(fechaManual) : new Date();
-      // Restamos 5 horas para ajustar al huso de Ecuador
-      d.setHours(d.getHours() - 5);
+    // FUNCIÓN DEFINITIVA PARA ECUADOR (Sin conversiones de Huso Horario)
+    const getEcuadorFechaManual = (fechaISO?: string | null) => {
+      const d = fechaISO ? new Date(fechaISO) : new Date();
       
-      // Formateamos manualmente a YYYY-MM-DD HH:mm:ss para que la base no lo re-convierta
-      return d.toISOString().replace('Z', '').replace('T', ' ');
+      // Ajuste manual de 5 horas
+      d.setHours(d.getHours() - 5);
+
+      const pad = (n: number) => n < 10 ? '0' + n : n;
+      
+      // Construimos el string manualmente: YYYY-MM-DD HH:mm:ss
+      const year = d.getFullYear();
+      const month = pad(d.getMonth() + 1);
+      const day = pad(d.getDate());
+      const hours = pad(d.getHours());
+      const minutes = pad(d.getMinutes());
+      const seconds = pad(d.getSeconds());
+
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
     };
 
     const payload = {
@@ -150,18 +160,18 @@ const guardarBatch = async () => {
       peso_final_digitado: datos.peso_final,
       observaciones: datos.observaciones,
       
-      // Enviamos la fecha como texto formateado para que Supabase la tome tal cual
-      fecha_hora_inicio: getEcuadorFecha(fotos.visor_cero.hora),
-      fecha_hora_fin: getEcuadorFecha(),
+      // Enviamos como texto "2026-03-04 14:31:30"
+      fecha_hora_inicio: getEcuadorFechaManual(fotos.visor_cero.hora),
+      fecha_hora_fin: getEcuadorFechaManual(),
       
       foto_visor_cero_url: fotos.visor_cero.url,
       foto_tanque_vacio_url: fotos.tanque_vacio.url,
       foto_visor_lleno_url: fotos.visor_lleno.url,
       foto_justificacion_url: fotos.incidencia.url,
       
-      hora_foto_visor_cero: getEcuadorFecha(fotos.visor_cero.hora),
-      hora_foto_tanque_vacio: getEcuadorFecha(fotos.tanque_vacio.hora),
-      hora_foto_visor_lleno: getEcuadorFecha()
+      hora_foto_visor_cero: getEcuadorFechaManual(fotos.visor_cero.hora),
+      hora_foto_tanque_vacio: getEcuadorFechaManual(fotos.tanque_vacio.hora),
+      hora_foto_visor_lleno: getEcuadorFechaManual()
     };
 
     const { error } = await supabase.from('procesos_batch').insert([payload]);
