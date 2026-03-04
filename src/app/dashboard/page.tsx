@@ -1,46 +1,101 @@
 ﻿'use client';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 
 export default function Dashboard() {
   const router = useRouter();
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const modules = [
-    { id: 3, name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso' },
-    { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros' },
-    { id: 4, name: 'Reportes Generales', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes' },
-    { id: 5, name: 'Reportes Gerenciales', icon: '📊', color: 'bg-white text-gray-800', route: '/gerencia' },
-    { id: 7, name: 'Estadísticas y Tiempos', icon: '⏱️', color: 'bg-white text-gray-800', route: '/estadisticas' },
-    { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin' },
+  useEffect(() => {
+    getProfile();
+  }, []);
+
+  async function getProfile() {
+    try {
+      // 1. Obtener el usuario de la sesión actual
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        router.push('/'); // Si no hay sesión, volver al login
+        return;
+      }
+
+      // 2. Consultar el rol en la tabla empleados
+      const { data: empleado, error } = await supabase
+        .from('empleados')
+        .select('rol')
+        .eq('email', user.email)
+        .single();
+
+      if (empleado) {
+        setUserRole(empleado.rol.toLowerCase());
+      }
+    } catch (error) {
+      console.error("Error verificando rol:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Definición de todos los módulos
+  const allModules = [
+    { id: 3, name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', protected: false },
+    { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros', protected: true },
+    { id: 4, name: 'Reportes Generales', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes', protected: false },
+    { id: 5, name: 'Reportes Gerenciales', icon: '📊', color: 'bg-white text-gray-800', route: '/gerencia', protected: true },
+    { id: 7, name: 'Estadísticas y Tiempos', icon: '⏱️', color: 'bg-white text-gray-800', route: '/estadisticas', protected: true },
+    { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', protected: true },
   ];
+
+  // Filtrar módulos: Si es operador, ocultar los protegidos
+  const modules = allModules.filter(mod => {
+    if (userRole === 'operador' && mod.protected) return false;
+    return true;
+  });
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <p className="font-black text-gray-400 animate-pulse uppercase tracking-widest">Verificando Credenciales...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100">
       {/* HEADER CORPORATIVO */}
       <header className="bg-white shadow-md border-b-4 border-red-700 p-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <img 
-              src="/logo-orojuez.jpg" 
-              alt="OroJuez Logo" 
-              className="h-16 w-auto object-contain"
-            />
-            <div className="h-10 w-[2px] bg-gray-200 hidden md:block"></div>
+          <div className="flex items-center gap-3">
+            <div className="bg-red-700 p-2 rounded-lg">
+              <span className="text-white font-black italic text-xl">ORJ</span>
+            </div>
             <div>
-              <h1 className="text-xl font-black text-gray-800 tracking-tighter leading-none">OROJUEZ <span className="text-red-700">SA</span></h1>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">Control de Producción</p>
+              <h2 className="text-xs font-black text-gray-800 uppercase leading-none">Control de Pesos</h2>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Panel de Control Principal</p>
             </div>
           </div>
           
-          <button 
-            onClick={() => router.push('/')}
-            className="bg-gray-800 hover:bg-black text-white px-5 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2 shadow-lg"
-          >
-            <span>🚪</span> SALIR
-          </button>
+          <div className="flex items-center gap-4">
+             <span className="hidden md:block text-[10px] font-black bg-gray-200 px-3 py-1 rounded-full text-gray-600 uppercase">
+                Perfil: {userRole || 'Cargando...'}
+             </span>
+             <button 
+                onClick={async () => {
+                  await supabase.auth.signOut();
+                  router.push('/');
+                }}
+                className="bg-gray-800 hover:bg-black text-white px-5 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2 shadow-lg"
+              >
+                <span>🚪</span> SALIR
+              </button>
+          </div>
         </div>
       </header>
 
-      {/* CUADRÍCULA DE MÓDULOS REORGANIZADA */}
+      {/* CUADRÍCULA DE MÓDULOS FILTRADA */}
       <main className="max-w-6xl mx-auto p-6 md:p-12">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {modules.map((mod) => (
@@ -61,9 +116,7 @@ export default function Dashboard() {
       </main>
 
       <footer className="fixed bottom-0 w-full p-4 text-center bg-gray-100/80 backdrop-blur-sm">
-        <p className="text-[9px] text-gray-400 font-bold uppercase tracking-[0.3em]">
-          OroJuez S.A. - Infraestructura Crítica de Datos
-        </p>
+        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">© 2026 OROJUEZ - Sistema de Control Operativo</p>
       </footer>
     </div>
   );
