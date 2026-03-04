@@ -7,6 +7,7 @@ export default function Dashboard() {
   const router = useRouter();
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userEmail, setUserEmail] = useState<string>('');
 
   useEffect(() => {
     async function getProfile() {
@@ -14,21 +15,42 @@ export default function Dashboard() {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
-          // Buscamos el rol en la tabla empleados (email ya viene en minúsculas)
+          const emailActual = session.user.email?.toLowerCase().trim() || '';
+          setUserEmail(emailActual);
+          console.log("Email detectado en sesión:", emailActual);
+
+          // 1. HARDCODE DE SEGURIDAD (Lista maestra de administradores)
+          // Si tu correo está aquí, entrarás como admin sí o sí
+          const adminsMaestros = [
+            'sistemas.orj@gmail.com',
+            'operaciones.industria@gmail.com',
+            'produccion.epacem@gmail.com'
+          ];
+
+          if (adminsMaestros.includes(emailActual)) {
+            console.log("Acceso concedido por Lista Maestra");
+            setUserRole('administrador');
+            setLoading(false);
+            return;
+          }
+
+          // 2. CONSULTA A BASE DE DATOS (Para el resto de usuarios)
           const { data: empleado } = await supabase
             .from('empleados')
             .select('rol')
-            .eq('email', session.user.email.toLowerCase())
+            .eq('email', emailActual)
             .maybeSingle();
           
           if (empleado) {
-            setUserRole(empleado.rol); 
+            console.log("Rol encontrado en DB:", empleado.rol);
+            setUserRole(empleado.rol.toLowerCase().trim());
           } else {
-            setUserRole('operador'); // Si no existe en la tabla, perfil básico
+            setUserRole('operador');
           }
         }
       } catch (error) {
-        console.error("Error cargando perfil:", error);
+        console.error("Error crítico:", error);
+        setUserRole('operador');
       } finally {
         setLoading(false);
       }
@@ -45,7 +67,7 @@ export default function Dashboard() {
     { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
   ];
 
-  // FILTRADO: Si NO es administrador, ocultamos los botones sensibles
+  // FILTRADO
   const modules = allModules.filter(mod => {
     if (userRole === 'administrador') return true;
     return !mod.adminOnly;
@@ -59,26 +81,24 @@ export default function Dashboard() {
             <div className="bg-red-700 p-2 rounded-lg">
               <span className="text-white font-black italic text-xl">ORJ</span>
             </div>
-            <h2 className="text-xs font-black text-gray-800 uppercase leading-none">
-              Control de Pesos <br/> <span className="text-gray-400">Panel Principal</span>
-            </h2>
+            <div>
+              <h2 className="text-xs font-black text-gray-800 uppercase leading-none">OroJuez S.A.</h2>
+              <p className="text-[9px] text-gray-400 font-bold uppercase">{userEmail}</p>
+            </div>
           </div>
           
           <div className="flex items-center gap-4">
-            {!loading && (
-              <div className="text-right mr-2">
-                <p className="text-[10px] font-bold text-red-700 uppercase leading-none">
-                  {userRole === 'administrador' ? '🛡️ Administrador' : '👷 Operador'}
-                </p>
-                <p className="text-[7px] font-black text-gray-400 uppercase">Sincronizado</p>
-              </div>
-            )}
+            <div className="text-right">
+              <span className={`text-[10px] font-black px-3 py-1 rounded-full border ${userRole === 'administrador' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                {loading ? '...' : userRole?.toUpperCase()}
+              </span>
+            </div>
             <button 
               onClick={async () => {
                 await supabase.auth.signOut();
                 window.location.href = '/'; 
               }}
-              className="bg-gray-800 text-white px-5 py-2 rounded-lg font-bold text-[10px] uppercase shadow-md"
+              className="bg-gray-800 text-white px-4 py-2 rounded-lg font-bold text-[10px] uppercase"
             >
               Salir
             </button>
@@ -86,26 +106,20 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-6 md:p-12">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6 max-w-4xl mx-auto">
+      <main className="max-w-6xl mx-auto p-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6 max-w-4xl mx-auto mt-10">
           {modules.map((mod) => (
             <button
               key={mod.id}
               onClick={() => router.push(mod.route)}
-              className={`${mod.color} p-10 rounded-[2.5rem] shadow-sm border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center group`}
+              className={`${mod.color} p-12 rounded-[2.5rem] shadow-sm border border-gray-100 hover:shadow-2xl hover:-translate-y-1 transition-all flex flex-col items-center group`}
             >
               <span className="text-5xl mb-4 group-hover:scale-110 transition-transform">{mod.icon}</span>
-              <span className="font-black uppercase text-xs tracking-widest text-center px-2">
-                {mod.name}
-              </span>
+              <span className="font-black uppercase text-xs tracking-widest text-center">{mod.name}</span>
             </button>
           ))}
         </div>
       </main>
-
-      <footer className="fixed bottom-0 w-full p-4 text-center bg-gray-100/80 backdrop-blur-sm">
-        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest italic">OroJuez S.A. - 2026</p>
-      </footer>
     </div>
   );
 }
