@@ -5,51 +5,85 @@ import { useRouter } from 'next/navigation';
 
 export default function ParametrosAdmin() {
   const router = useRouter();
-  const [tab, setTab] = useState<'proveedor' | 'variedad' | 'turno'>('proveedor');
+  const [tab, setTab] = useState<'proveedor' | 'variedad' | 'turno' | 'sitio'>('proveedor');
   const [loading, setLoading] = useState(false);
   const [lista, setLista] = useState<any[]>([]);
+  const [localidades, setLocalidades] = useState<any[]>([]); // Para el select de sitios
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  
+  // Estados de formulario
   const [nuevoValor, setNuevoValor] = useState('');
+  const [localidadId, setLocalidadId] = useState('');
 
   useEffect(() => {
-    cargarParametros();
+    cargarDatos();
   }, [tab]);
 
-  async function cargarParametros() {
+  async function cargarDatos() {
     setLoading(true);
-    // Filtramos la tabla 'parametros' por la categoría de la pestaña activa
-    const { data } = await supabase
-      .from('parametros')
-      .select('*')
-      .eq('categoria', tab)
-      .order('valor');
-    if (data) setLista(data);
+    setEditandoId(null);
+    setNuevoValor('');
+    setLocalidadId('');
+
+    if (tab === 'sitio') {
+      // Cargar Sitios vinculados con Localidades según tu estructura SQL
+      const { data: dataSitios } = await supabase
+        .from('sitios')
+        .select('*, localidades(nombre)')
+        .order('nombre');
+      const { data: dataLoc } = await supabase.from('localidades').select('*').order('nombre');
+      
+      if (dataSitios) setLista(dataSitios);
+      if (dataLoc) setLocalidades(dataLoc);
+    } else {
+      // Cargar Parámetros generales (Proveedor, Variedad, Turno)
+      const { data } = await supabase
+        .from('parametros')
+        .select('*')
+        .eq('categoria', tab)
+        .order('valor');
+      if (data) setLista(data);
+    }
     setLoading(false);
   }
 
   async function guardar() {
-    if (!nuevoValor) return;
-    
-    if (editandoId) {
-      await supabase.from('parametros')
-        .update({ valor: nuevoValor.toUpperCase() })
-        .eq('id', editandoId);
-      setEditandoId(null);
+    if (!nuevoValor) return alert("Ingrese un nombre");
+    setLoading(true);
+
+    if (tab === 'sitio') {
+      if (!localidadId) return alert("Seleccione una localidad");
+      const payload = { nombre: nuevoValor.toUpperCase(), localidad_id: localidadId, activo: true };
+      
+      if (editandoId) {
+        await supabase.from('sitios').update(payload).eq('id', editandoId);
+      } else {
+        await supabase.from('sitios').insert([payload]);
+      }
     } else {
-      await supabase.from('parametros').insert([{ 
-        valor: nuevoValor.toUpperCase(), 
-        categoria: tab,
-        activo: true 
-      }]);
+      const payload = { valor: nuevoValor.toUpperCase(), categoria: tab, activo: true };
+      
+      if (editandoId) {
+        await supabase.from('parametros').update({ valor: nuevoValor.toUpperCase() }).eq('id', editandoId);
+      } else {
+        await supabase.from('parametros').insert([payload]);
+      }
     }
-    setNuevoValor('');
-    cargarParametros();
+    
+    cargarDatos();
   }
 
   async function eliminar(id: string) {
-    if (!confirm("¿Eliminar?")) return;
-    await supabase.from('parametros').delete().eq('id', id);
-    cargarParametros();
+    if (!confirm("¿Eliminar permanentemente?")) return;
+    const tabla = tab === 'sitio' ? 'sitios' : 'parametros';
+    await supabase.from(tabla).delete().eq('id', id);
+    cargarDatos();
+  }
+
+  function prepararEdicion(item: any) {
+    setEditandoId(item.id);
+    setNuevoValor(tab === 'sitio' ? item.nombre : item.valor);
+    if (tab === 'sitio') setLocalidadId(item.localidad_id);
   }
 
   return (
@@ -59,12 +93,12 @@ export default function ParametrosAdmin() {
           <h1 className="text-white font-black uppercase italic text-xl tracking-tighter">Configuración ORJ</h1>
           <button onClick={() => router.push('/dashboard')} className="text-[10px] font-black text-red-500 bg-white/10 px-4 py-2 rounded-xl">VOLVER</button>
         </div>
-        <div className="flex gap-1 mt-6 max-w-4xl mx-auto bg-slate-800 p-1 rounded-2xl">
-          {['proveedor', 'variedad', 'turno'].map((t) => (
+        <div className="flex gap-1 mt-6 max-w-4xl mx-auto bg-slate-800 p-1 rounded-2xl overflow-x-auto">
+          {['proveedor', 'variedad', 'turno', 'sitio'].map((t) => (
             <button 
               key={t} 
-              onClick={() => { setTab(t as any); setEditandoId(null); }} 
-              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${tab === t ? 'bg-red-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+              onClick={() => setTab(t as any)} 
+              className={`flex-1 min-w-[80px] py-3 rounded-xl text-[10px] font-black uppercase transition-all ${tab === t ? 'bg-red-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
             >
               {t}s
             </button>
@@ -73,46 +107,59 @@ export default function ParametrosAdmin() {
       </nav>
 
       <main className="p-4 max-w-4xl mx-auto space-y-6">
-        {/* FORMULARIO ÚNICO ADAPTATIVO */}
+        {/* FORMULARIO DINÁMICO */}
         <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border-2 border-red-50 space-y-4">
           <p className="text-[10px] font-black text-red-700 uppercase">
             {editandoId ? `✏️ Editando ${tab}` : `➕ Nuevo ${tab}`}
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-col md:flex-row gap-2">
             <input 
               type="text" 
               placeholder={`NOMBRE DEL ${tab.toUpperCase()}`}
-              className="flex-1 p-4 border-2 rounded-2xl font-black uppercase text-sm focus:border-red-500 outline-none"
+              className="flex-1 p-4 border-2 rounded-2xl font-black uppercase text-sm outline-none focus:border-red-500"
               value={nuevoValor} 
               onChange={(e) => setNuevoValor(e.target.value)} 
             />
-            <button onClick={guardar} className="bg-red-700 text-white px-8 rounded-2xl font-black uppercase text-xs shadow-lg hover:bg-red-800 transition-all">
+            
+            {tab === 'sitio' && (
+              <select 
+                className="flex-1 p-4 border-2 rounded-2xl font-black uppercase text-sm bg-gray-50 outline-none focus:border-red-500"
+                value={localidadId}
+                onChange={(e) => setLocalidadId(e.target.value)}
+              >
+                <option value="">SELECCIONAR SEDE/LOCALIDAD</option>
+                {localidades.map(loc => (
+                  <option key={loc.id} value={loc.id}>{loc.nombre}</option>
+                ))}
+              </select>
+            )}
+
+            <button onClick={guardar} className="bg-red-700 text-white px-8 py-4 md:py-0 rounded-2xl font-black uppercase text-xs shadow-lg hover:bg-red-800 transition-all">
               {editandoId ? 'Actualizar' : 'Guardar'}
             </button>
           </div>
         </div>
 
-        {/* LISTADO DINÁMICO */}
+        {/* LISTADO */}
         <div className="grid grid-cols-1 gap-2">
           {loading ? (
-            <p className="text-center font-black text-slate-300 py-10 animate-pulse">CARGANDO...</p>
+            <p className="text-center font-black text-slate-300 py-10 animate-pulse uppercase">Sincronizando...</p>
           ) : (
             lista.map((item) => (
-              <div key={item.id} className="bg-white p-4 rounded-2xl flex justify-between items-center border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                <span className="font-black text-slate-700 uppercase text-xs">{item.valor}</span>
+              <div key={item.id} className="bg-white p-4 rounded-2xl flex justify-between items-center border border-gray-100 shadow-sm hover:shadow-md transition-all">
+                <div>
+                  <span className="font-black text-slate-700 uppercase text-xs">
+                    {tab === 'sitio' ? item.nombre : item.valor}
+                  </span>
+                  {tab === 'sitio' && (
+                    <p className="text-[9px] font-bold text-red-600 uppercase">
+                      Sede: {item.localidades?.nombre || 'Sin vincular'}
+                    </p>
+                  )}
+                </div>
                 <div className="flex gap-4">
-                  <button 
-                    onClick={() => { setEditandoId(item.id); setNuevoValor(item.valor); }} 
-                    className="text-blue-600 font-black text-[10px] uppercase hover:underline"
-                  >
-                    Editar
-                  </button>
-                  <button 
-                    onClick={() => eliminar(item.id)} 
-                    className="text-red-300 hover:text-red-600 font-black text-[10px] uppercase transition-colors"
-                  >
-                    Borrar
-                  </button>
+                  <button onClick={() => prepararEdicion(item)} className="text-blue-600 font-black text-[10px] uppercase hover:underline">Editar</button>
+                  <button onClick={() => eliminar(item.id)} className="text-red-300 hover:text-red-600 font-black text-[10px] uppercase">Borrar</button>
                 </div>
               </div>
             ))
