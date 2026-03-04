@@ -32,9 +32,9 @@ export default function ParametrosAdmin() {
       if (dataLoc) setAuxiliares(dataLoc);
     } 
     else if (tab === 'operador') {
-      const { data: dataOps } = await supabase.from('operadores').select('*, sitios(nombre)').order('nombre');
+      const { data: dataOpe } = await supabase.from('operadores').select('*, sitios(nombre)').order('nombre');
       const { data: dataSit } = await supabase.from('sitios').select('*').order('nombre');
-      if (dataOps) setLista(dataOps);
+      if (dataOpe) setLista(dataOpe);
       if (dataSit) setAuxiliares(dataSit);
     }
     else {
@@ -48,94 +48,135 @@ export default function ParametrosAdmin() {
     if (!nuevoValor) return alert("Ingrese un nombre");
     setLoading(true);
 
-    if (tab === 'sitio') {
-      if (!vinculoId) return alert("Seleccione una localidad");
-      const payload = { nombre: nuevoValor.toUpperCase(), localidad_id: vinculoId, activo: true };
-      editandoId ? await supabase.from('sitios').update(payload).eq('id', editandoId) : await supabase.from('sitios').insert([payload]);
-    } 
-    else if (tab === 'operador') {
-      if (!vinculoId) return alert("Seleccione un sitio");
-      const payload = { nombre: nuevoValor.toUpperCase(), sitio_id: vinculoId, activo: true };
-      editandoId ? await supabase.from('operadores').update(payload).eq('id', editandoId) : await supabase.from('operadores').insert([payload]);
+    try {
+      if (tab === 'sitio') {
+        if (!vinculoId) return alert("Seleccione una localidad");
+        const payload = { nombre: nuevoValor.toUpperCase(), localidad_id: vinculoId, activo: true };
+        editandoId 
+          ? await supabase.from('sitios').update(payload).eq('id', editandoId) 
+          : await supabase.from('sitios').insert([payload]);
+      } 
+      else if (tab === 'operador') {
+        if (!vinculoId) return alert("Seleccione un sitio");
+        const payload = { nombre: nuevoValor.toUpperCase(), sitio_id: vinculoId, activo: true };
+        editandoId 
+          ? await supabase.from('operadores').update(payload).eq('id', editandoId) 
+          : await supabase.from('operadores').insert([payload]);
+      }
+      else {
+        // CORRECCIÓN PARA PROVEEDORES, VARIEDADES Y TURNOS
+        if (editandoId) {
+          await supabase.from('parametros').update({ valor: nuevoValor.toUpperCase() }).eq('id', editandoId);
+        } else {
+          await supabase.from('parametros').insert([{ 
+            valor: nuevoValor.toUpperCase(), 
+            categoria: tab, 
+            activo: true 
+          }]);
+        }
+      }
+      
+      alert("✅ Guardado correctamente");
+      cargarDatos();
+    } catch (error) {
+      console.error(error);
+      alert("Error al procesar la solicitud");
+    } finally {
+      setLoading(false);
     }
-    else {
-      const payload = { valor: nuevoValor.toUpperCase(), categoria: tab, activo: true };
-      editandoId ? await supabase.from('parametros').update({ valor: nuevoValor.toUpperCase() }).eq('id', editandoId) : await supabase.from('parametros').insert([payload]);
-    }
-    
-    cargarDatos();
   }
 
   async function eliminar(id: string) {
-    if (!confirm("¿Eliminar permanentemente?")) return;
-    const tabla = tab === 'sitio' ? 'sitios' : tab === 'operador' ? 'operadores' : 'parametros';
-    await supabase.from(tabla).delete().eq('id', id);
-    cargarDatos();
+    if (!confirm("¿Está seguro de eliminar este registro?")) return;
+    const tabla = (tab === 'sitio') ? 'sitios' : (tab === 'operador' ? 'operadores' : 'parametros');
+    const { error } = await supabase.from(tabla).delete().eq('id', id);
+    if (error) alert("Error al eliminar");
+    else cargarDatos();
   }
 
   function prepararEdicion(item: any) {
     setEditandoId(item.id);
     setNuevoValor(tab === 'sitio' || tab === 'operador' ? item.nombre : item.valor);
-    setVinculoId(tab === 'sitio' ? item.localidad_id : tab === 'operador' ? item.sitio_id : '');
+    if (tab === 'sitio') setVinculoId(item.localidad_id);
+    if (tab === 'operador') setVinculoId(item.sitio_id);
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20 font-sans">
-      <nav className="bg-slate-900 p-4 shadow-xl border-b-8 border-red-700 sticky top-0 z-10">
-        <div className="flex items-center justify-between max-w-4xl mx-auto">
-          <h1 className="text-white font-black uppercase italic text-xl tracking-tighter">Configuración ORJ</h1>
-          <button onClick={() => router.push('/dashboard')} className="text-[10px] font-black text-red-500 bg-white/10 px-4 py-2 rounded-xl">VOLVER</button>
-        </div>
-        <div className="flex gap-1 mt-6 max-w-4xl mx-auto bg-slate-800 p-1 rounded-2xl overflow-x-auto">
-          {['proveedor', 'variedad', 'turno', 'sitio', 'operador'].map((t) => (
-            <button key={t} onClick={() => setTab(t as any)} className={`flex-1 min-w-[85px] py-3 rounded-xl text-[10px] font-black uppercase transition-all ${tab === t ? 'bg-red-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>
-              {t}es
+    <div className=\"min-h-screen bg-slate-50 font-sans pb-20\">
+      <div className=\"bg-slate-900 p-6 rounded-b-[3rem] shadow-xl border-b-4 border-red-700\">
+        <button onClick={() => router.back()} className=\"text-white/50 text-[10px] font-black uppercase mb-4 flex items-center gap-2\">
+          ← Volver
+        </button>
+        <h1 className=\"text-white text-2xl font-black italic uppercase tracking-tighter\">Configuración</h1>
+        <p className=\"text-red-500 text-[10px] font-black uppercase tracking-widest\">Parámetros del Sistema</p>
+      </div>
+
+      <div className=\"p-4 max-w-xl mx-auto space-y-4 -mt-4\">
+        <div className=\"bg-white p-2 rounded-2xl shadow-lg flex justify-between overflow-x-auto gap-2\">
+          {(['proveedor', 'variedad', 'turno', 'sitio', 'operador'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase transition-all ${tab === t ? 'bg-red-700 text-white' : 'bg-slate-100 text-slate-400'}`}
+            >
+              {t}s
             </button>
           ))}
         </div>
-      </nav>
 
-      <main className="p-4 max-w-4xl mx-auto space-y-6">
-        <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border-2 border-red-50 space-y-4">
-          <p className="text-[10px] font-black text-red-700 uppercase">{editandoId ? `✏️ Editando ${tab}` : `➕ Nuevo ${tab}`}</p>
-          <div className="flex flex-col md:flex-row gap-2">
-            <input type="text" placeholder={`NOMBRE DEL ${tab.toUpperCase()}`} className="flex-1 p-4 border-2 rounded-2xl font-black uppercase text-sm outline-none focus:border-red-500" value={nuevoValor} onChange={(e) => setNuevoValor(e.target.value)} />
-            
+        <div className=\"bg-white p-6 rounded-[2.5rem] shadow-xl border border-gray-100 space-y-4\">
+          <div className=\"space-y-4\">
             {(tab === 'sitio' || tab === 'operador') && (
-              <select className="flex-1 p-4 border-2 rounded-2xl font-black uppercase text-sm bg-gray-50 outline-none focus:border-red-500" value={vinculoId} onChange={(e) => setVinculoId(e.target.value)}>
-                <option value="">{tab === 'sitio' ? 'SELECCIONAR LOCALIDAD' : 'SELECCIONAR SITIO'}</option>
+              <select 
+                className=\"w-full p-4 bg-slate-50 border-none rounded-2xl text-xs font-bold outline-none ring-2 ring-transparent focus:ring-red-700 transition-all\"
+                value={vinculoId}
+                onChange={(e) => setVinculoId(e.target.value)}
+              >
+                <option value=\"\">{tab === 'sitio' ? '-- SELECCIONE LOCALIDAD --' : '-- SELECCIONE SITIO --'}</option>
                 {auxiliares.map(aux => (
                   <option key={aux.id} value={aux.id}>{aux.nombre}</option>
                 ))}
               </select>
             )}
 
-            <button onClick={guardar} className="bg-red-700 text-white px-8 py-4 md:py-0 rounded-2xl font-black uppercase text-xs shadow-lg hover:bg-red-800 transition-all">
+            <input
+              type=\"text\"
+              placeholder={`NOMBRE DEL ${tab.toUpperCase()}`}
+              className=\"w-full p-4 bg-slate-50 border-none rounded-2xl text-xs font-bold outline-none ring-2 ring-transparent focus:ring-red-700 transition-all\"
+              value={nuevoValor}
+              onChange={(e) => setNuevoValor(e.target.value)}
+            />
+            
+            <button 
+              onClick={guardar}
+              disabled={loading}
+              className=\"w-full bg-slate-900 text-white p-4 rounded-2xl font-black text-xs uppercase hover:bg-red-700 transition-all\"
+            >
               {editandoId ? 'Actualizar' : 'Guardar'}
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-2">
+        <div className=\"grid grid-cols-1 gap-2\">
           {loading ? (
-            <p className="text-center font-black text-slate-300 py-10 animate-pulse uppercase">Sincronizando...</p>
+            <p className=\"text-center font-black text-slate-300 py-10 animate-pulse uppercase\">Sincronizando...</p>
           ) : (
             lista.map((item) => (
-              <div key={item.id} className="bg-white p-4 rounded-2xl flex justify-between items-center border border-gray-100 shadow-sm hover:shadow-md transition-all">
+              <div key={item.id} className=\"bg-white p-4 rounded-2xl flex justify-between items-center border border-gray-100 shadow-sm hover:shadow-md transition-all\">
                 <div>
-                  <span className="font-black text-slate-700 uppercase text-xs">{tab === 'sitio' || tab === 'operador' ? item.nombre : item.valor}</span>
-                  {tab === 'sitio' && <p className="text-[9px] font-bold text-red-600 uppercase">Sede: {item.localidades?.nombre || 'Sin vincular'}</p>}
-                  {tab === 'operador' && <p className="text-[9px] font-bold text-blue-600 uppercase">Sitio: {item.sitios?.nombre || 'Sin sitio'}</p>}
+                  <span className=\"font-black text-slate-700 uppercase text-xs\">{tab === 'sitio' || tab === 'operador' ? item.nombre : item.valor}</span>
+                  {tab === 'sitio' && <p className=\"text-[9px] font-bold text-red-600 uppercase\">Sede: {item.localidades?.nombre || 'Sin vincular'}</p>}
+                  {tab === 'operador' && <p className=\"text-[9px] font-bold text-blue-600 uppercase\">Sitio: {item.sitios?.nombre || 'Sin sitio'}</p>}
                 </div>
-                <div className="flex gap-4">
-                  <button onClick={() => prepararEdicion(item)} className="text-blue-600 font-black text-[10px] uppercase hover:underline">Editar</button>
-                  <button onClick={() => eliminar(item.id)} className="text-red-300 hover:text-red-600 font-black text-[10px] uppercase">Borrar</button>
+                <div className=\"flex gap-4\">
+                  <button onClick={() => prepararEdicion(item)} className=\"text-blue-600 font-black text-[10px] uppercase hover:underline\">Editar</button>
+                  <button onClick={() => eliminar(item.id)} className=\"text-red-300 hover:text-red-600 font-black text-[10px] uppercase transition-colors\">Eliminar</button>
                 </div>
               </div>
             ))
           )}
         </div>
-      </main>
+      </div>
     </div>
   );
 }

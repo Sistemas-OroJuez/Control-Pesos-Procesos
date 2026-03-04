@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import * as XLSX from 'xlsx'; // Asegúrate de tener instalada la librería xlsx
 
 export default function ReporteGeneralCompleto() {
   const router = useRouter();
@@ -74,58 +73,13 @@ export default function ReporteGeneralCompleto() {
     setLoading(false);
   }
 
-  // --- NUEVAS FUNCIONES DE EXPORTACIÓN ---
-
-  const exportarExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(datos.map(r => ({
-      Batch: r.batch_id,
-      Fecha: new Date(r.created_at).toLocaleString(),
-      Turno: r.turno,
-      Sitio: r.operadores?.sitios?.nombre,
-      Operador: r.operadores?.nombre,
-      Variedad: r.variedad,
-      Proveedor: r.proveedor,
-      Peso_Kg: r.peso_final_digitado,
-      Observaciones: r.observaciones
-    })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Reporte General");
-    XLSX.writeFile(wb, `Reporte_General_OroJuez_${filtros.desde}.xlsx`);
-  };
-
-  const exportarPDF = () => {
-    window.print(); // Abre el diálogo de impresión optimizado para PDF
-  };
-
-  const enviarWhatsApp = () => {
-    if (datos.length === 0) return;
-    
-    const mensaje = 
-      `📊 *REPORTE GENERAL OROJUEZ*\n` +
-      `📅 *Periodo:* ${filtros.desde} al ${filtros.hasta}\n` +
-      `🔢 *Total Batches:* ${datos.length}\n` +
-      `🚀 *TOTAL PESADO:* ${totalPeso.toLocaleString()} KG\n\n` +
-      `_Generado desde el Panel de Auditoría_`;
-
-    window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
-  };
-
   return (
     <div className="min-h-screen bg-gray-100 p-4">
       <div className="max-w-[1600px] mx-auto space-y-4">
         
         {/* BARRA DE FILTROS AVANZADA */}
-        <div className="bg-white p-6 rounded-3xl shadow-lg border-b-4 border-red-700 print:hidden">
-          <div className="flex justify-between items-center mb-4">
-             <h2 className="text-red-700 font-black uppercase text-xs italic tracking-widest">Filtros de Auditoría</h2>
-             {/* BOTONES DE EXPORTACIÓN */}
-             <div className="flex gap-2">
-                <button onClick={enviarWhatsApp} className="bg-green-600 text-white px-3 py-1.5 rounded-xl font-black text-[9px] uppercase hover:bg-green-700 transition-all shadow-sm">📲 WhatsApp</button>
-                <button onClick={exportarExcel} className="bg-emerald-700 text-white px-3 py-1.5 rounded-xl font-black text-[9px] uppercase hover:bg-emerald-800 transition-all shadow-sm">📈 Excel</button>
-                <button onClick={exportarPDF} className="bg-slate-700 text-white px-3 py-1.5 rounded-xl font-black text-[9px] uppercase hover:bg-slate-800 transition-all shadow-sm">📄 PDF / Imprimir</button>
-             </div>
-          </div>
-
+        <div className="bg-white p-6 rounded-3xl shadow-lg border-b-4 border-red-700">
+          <h2 className="text-red-700 font-black uppercase text-xs mb-4 italic tracking-widest">Filtros de Auditoría</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             
             <div className="flex flex-col gap-1">
@@ -177,7 +131,7 @@ export default function ReporteGeneralCompleto() {
                   <th className="p-4 border-r border-slate-700">Batch / Info</th>
                   <th className="p-4 border-r border-slate-700">Sitio / Operador</th>
                   <th className="p-4 border-r border-slate-700">Variedad / Proveedor</th>
-                  <th className="p-4 text-center border-r border-slate-700 print:hidden">Fotos de Auditoría</th>
+                  <th className="p-4 text-center border-r border-slate-700">Fotos de Auditoría</th>
                   <th className="p-4 text-right border-r border-slate-700">Peso Kg</th>
                   <th className="p-4">Novedades</th>
                 </tr>
@@ -198,7 +152,7 @@ export default function ReporteGeneralCompleto() {
                       <p className="font-black text-slate-700">{reg.variedad}</p>
                       <p className="text-gray-500 font-bold text-[9px]">{reg.proveedor}</p>
                     </td>
-                    <td className="p-4 print:hidden">
+                    <td className="p-4">
                       <div className="flex gap-1 justify-center">
                         {reg.foto_visor_cero_url && <a href={reg.foto_visor_cero_url} target="_blank" className="bg-blue-600 text-white px-2 py-1.5 rounded-lg font-black text-[8px] uppercase shadow-sm">Visor 0</a>}
                         {reg.foto_tanque_vacio_url && <a href={reg.foto_tanque_vacio_url} target="_blank" className="bg-blue-600 text-white px-2 py-1.5 rounded-lg font-black text-[8px] uppercase shadow-sm">Tq Vacio</a>}
@@ -211,13 +165,14 @@ export default function ReporteGeneralCompleto() {
                     <td className="p-4">
                       <p className="italic text-gray-500 line-clamp-2 mb-1">{reg.observaciones || '-'}</p>
                       {reg.foto_justificacion_url && (
-                        <a href={reg.foto_justificacion_url} target="_blank" className="text-orange-600 font-black underline uppercase text-[8px] print:hidden">Ver Justificación</a>
+                        <a href={reg.foto_justificacion_url} target="_blank" className="text-orange-600 font-black underline uppercase text-[8px]">Ver Justificación</a>
                       )}
                     </td>
                   </tr>
                 ))}
               </tbody>
 
+              {/* FILA DE SUBTOTALES */}
               <tfoot className="bg-slate-100 border-t-2 border-slate-900">
                 <tr className="font-black">
                   <td colSpan={4} className="p-4 text-right text-slate-900 uppercase tracking-widest text-xs">
