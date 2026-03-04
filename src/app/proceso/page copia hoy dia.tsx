@@ -124,53 +124,52 @@ export default function ProcesoLlenado() {
   };
 
   const guardarBatch = async () => {
+    // Validamos que existan las URLs de la nube
+    if (!fotos.visor_cero.url || !fotos.tanque_vacio.url || !fotos.visor_lleno.url) {
+      alert("⚠️ Faltan capturas obligatorias (Visor Cero, Tanque Vacío y Visor Lleno).");
+      return;
+    }
+    
     if (!datos.operador_id || !datos.variedad || !datos.proveedor || !datos.turno || !datos.peso_final) {
-      alert("Por favor complete todos los campos y tome las fotos requeridas");
+      alert("⚠️ Todos los campos de selección y el peso final son obligatorios.");
       return;
     }
 
     setLoading(true);
+    try {
+      const { error } = await supabase.from('procesos_batch').insert([{
+        batch_id: batchId,
+        operador_id: datos.operador_id,
+        variedad: datos.variedad,
+        proveedor: datos.proveedor,
+        turno: datos.turno,
+        foto_visor_cero_url: fotos.visor_cero.url,
+        hora_foto_visor_cero: fotos.visor_cero.hora,
+        foto_tanque_vacio_url: fotos.tanque_vacio.url,
+        hora_foto_tanque_vacio: fotos.tanque_vacio.hora,
+        foto_visor_lleno_url: fotos.visor_lleno.url,
+        hora_foto_visor_lleno: fotos.visor_lleno.hora,
+        foto_justificacion_url: fotos.incidencia.url || null,
+        peso_final_digitado: parseFloat(datos.peso_final),
+        observaciones: datos.observaciones,
+        fecha_hora_inicio: fotos.visor_cero.hora,
+        fecha_hora_fin: new Date().toISOString()
+      }]);
 
-    // FUNCIÓN PARA AJUSTAR A HORARIO ECUADOR (UTC-5)
-    const getEcuadorISO = () => {
-      const ahora = new Date();
-      // Restamos 5 horas manualmente para que Supabase lo guarde con la fecha local de Ecuador
-      ahora.setHours(ahora.getHours() - 5); 
-      return ahora.toISOString();
-    };
+      if (error) throw error;
+      
+      // Limpiar borradores al finalizar con éxito
+      localStorage.removeItem('draft_datos');
+      localStorage.removeItem('draft_fotos');
+      localStorage.removeItem('draft_batchId');
 
-    const payload = {
-      batch_id: batchId,
-      operador_id: datos.operador_id,
-      variedad: datos.variedad,
-      proveedor: datos.proveedor,
-      turno: datos.turno,
-      peso_final_digitado: datos.peso_final,
-      observaciones: datos.observaciones,
-      // Aplicamos el ajuste de -5 horas a todos los campos de tiempo
-      fecha_hora_inicio: fotos.visor_cero.hora ? new Date(new Date(fotos.visor_cero.hora).getTime() - (5 * 60 * 60 * 1000)).toISOString() : getEcuadorISO(),
-      fecha_hora_foto_2: fotos.tanque_vacio.hora ? new Date(new Date(fotos.tanque_vacio.hora).getTime() - (5 * 60 * 60 * 1000)).toISOString() : getEcuadorISO(),
-      fecha_hora_fin: getEcuadorISO(),
-      foto_visor_cero_url: fotos.visor_cero.url,
-      foto_tanque_vacio_url: fotos.tanque_vacio.url,
-      foto_visor_lleno_url: fotos.visor_lleno.url,
-      foto_justificacion_url: fotos.incidencia.url,
-      // Estos campos son los que usas para mostrar la hora en el reporte
-      hora_foto_visor_cero: fotos.visor_cero.hora ? new Date(new Date(fotos.visor_cero.hora).getTime() - (5 * 60 * 60 * 1000)).toISOString() : null,
-      hora_foto_tanque_vacio: fotos.tanque_vacio.hora ? new Date(new Date(fotos.tanque_vacio.hora).getTime() - (5 * 60 * 60 * 1000)).toISOString() : null,
-      hora_foto_visor_lleno: getEcuadorISO()
-    };
-
-    const { error } = await supabase.from('procesos_batch').insert([payload]);
-
-    if (error) {
-      console.error(error);
-      alert("Error al guardar: " + error.message);
-    } else {
-      alert("✅ BATCH GUARDADO CON ÉXITO");
+      alert("✅ Registro guardado con éxito.");
       router.push('/dashboard');
+    } catch (err: any) {
+      alert("❌ Error al guardar registro: " + err.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
