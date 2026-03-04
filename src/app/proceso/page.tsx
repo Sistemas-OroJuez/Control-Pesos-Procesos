@@ -16,6 +16,7 @@ export default function ProcesoLlenado() {
   const [listaTurnos, setListaTurnos] = useState<any[]>([]);
   const [listaOperadores, setListaOperadores] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  
   const [subiendoFoto, setSubiendoFoto] = useState<string | null>(null);
 
   const [datos, setDatos] = useState({
@@ -34,6 +35,7 @@ export default function ProcesoLlenado() {
     incidencia: { url: '' }
   });
 
+  // --- LÓGICA DE RECUPERACIÓN Y RESERVA SEGURA ---
   useEffect(() => {
     setIsClient(true);
     
@@ -53,22 +55,40 @@ export default function ProcesoLlenado() {
         const a = String(hoy.getFullYear()).slice(-2);
         const prefix = `EXT${d}${m}${a}`;
         
+        // 1. Obtener el conteo base de hoy
         const { count } = await supabase
           .from('procesos_batch')
           .select('*', { count: 'exact', head: true })
           .like('batch_id', `${prefix}%`);
 
-        const sequence = String((count || 0) + 1).padStart(2, '0');
-        const nuevoId = `${prefix}${sequence}`;
-        
-        // RESERVA INICIAL: Insertamos solo el ID
-        await supabase.from('procesos_batch').insert([{ 
-          batch_id: nuevoId,
-          fecha_hora_inicio: new Date().toISOString() 
-        }]);
+        let numSecuencia = (count || 0) + 1;
+        let registroExitoso = false;
+        let idFinal = "";
 
-        setBatchId(nuevoId);
-        localStorage.setItem('draft_batchId', nuevoId);
+        // 2. Bucle para asegurar que el ID no esté duplicado en la DB
+        while (!registroExitoso) {
+          idFinal = `${prefix}${String(numSecuencia).padStart(2, '0')}`;
+          
+          // Intentamos una "reserva" rápida
+          const { error: insertError } = await supabase
+            .from('procesos_batch')
+            .insert([{ 
+              batch_id: idFinal,
+              fecha_hora_inicio: new Date().toISOString() 
+            }]);
+
+          if (!insertError) {
+            registroExitoso = true; // El número estaba libre y lo reservamos
+          } else if (insertError.code === '23505') { 
+            numSecuencia++; // El número ya existe, intentamos con el siguiente
+          } else {
+            console.error("Error reserva:", insertError);
+            break;
+          }
+        }
+
+        setBatchId(idFinal);
+        localStorage.setItem('draft_batchId', idFinal);
       }
 
       const [resParams, resOps] = await Promise.all([
@@ -86,6 +106,7 @@ export default function ProcesoLlenado() {
     inicializar();
   }, []);
 
+  // --- AUTO-GUARDADO EN LOCALSTORAGE ---
   useEffect(() => {
     if (isClient && batchId !== 'Cargando...') {
       localStorage.setItem('draft_datos', JSON.stringify(datos));
@@ -111,7 +132,7 @@ export default function ProcesoLlenado() {
           const nuevaInfoFoto = { url: urlNube, hora: new Date().toISOString() };
           setFotos(prev => ({ ...prev, [tipo]: nuevaInfoFoto }));
         } catch (error) {
-          alert("Error al subir la imagen");
+          alert("Error al subir la imagen.");
         } finally {
           setSubiendoFoto(null);
         }
@@ -134,7 +155,6 @@ export default function ProcesoLlenado() {
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     };
 
-    // Preparamos los datos a actualizar (QUITAMOS batch_id del cuerpo para evitar el error de duplicado)
     const payload = {
       operador_id: datos.operador_id,
       variedad: datos.variedad,
@@ -153,7 +173,7 @@ export default function ProcesoLlenado() {
       hora_foto_visor_lleno: getEcuadorFechaManual()
     };
 
-    // PASO CLAVE: Usamos .update() filtrando por el batch_id que ya existe
+    // USAMOS UPDATE PARA LLENAR EL REGISTRO QUE YA RESERVAMOS
     const { error } = await supabase
       .from('procesos_batch')
       .update(payload)
@@ -169,6 +189,7 @@ export default function ProcesoLlenado() {
       localStorage.removeItem('draft_fotos');
       localStorage.removeItem('draft_batchId');
       
+      // Resetear estados
       setDatos({ operador_id: '', variedad: '', proveedor: '', turno: '', peso_final: '', observaciones: '' });
       setFotos({
         visor_cero: { url: '', hora: null },
@@ -198,7 +219,7 @@ export default function ProcesoLlenado() {
       <div className="p-5 space-y-5">
         <section className="bg-white p-5 rounded-3xl border shadow-sm space-y-4">
           <div>
-            <label className="text-[10px] font-black text-red-700 uppercase ml-1">1. Seleccione Operador</label>
+            <label className="text-[10px] font-black text-red-700 uppercase ml-1">1. Operador</label>
             <select 
               className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
               value={datos.operador_id}
@@ -211,7 +232,7 @@ export default function ProcesoLlenado() {
 
           <div className="grid grid-cols-1 gap-4">
             <div>
-              <label className="text-[10px] font-black text-red-700 uppercase ml-1">2. Variedad de Palma</label>
+              <label className="text-[10px] font-black text-red-700 uppercase ml-1">2. Variedad</label>
               <select 
                 className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
                 value={datos.variedad}
@@ -222,7 +243,7 @@ export default function ProcesoLlenado() {
               </select>
             </div>
             <div>
-              <label className="text-[10px] font-black text-red-700 uppercase ml-1">3. Proveedor MP</label>
+              <label className="text-[10px] font-black text-red-700 uppercase ml-1">3. Proveedor</label>
               <select 
                 className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
                 value={datos.proveedor}
@@ -233,7 +254,7 @@ export default function ProcesoLlenado() {
               </select>
             </div>
             <div>
-              <label className="text-[10px] font-black text-red-700 uppercase ml-1">4. Turno de Trabajo</label>
+              <label className="text-[10px] font-black text-red-700 uppercase ml-1">4. Turno</label>
               <select 
                 className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
                 value={datos.turno}
@@ -248,79 +269,54 @@ export default function ProcesoLlenado() {
 
         <div className="grid grid-cols-2 gap-3">
           <button 
-            type="button"
-            disabled={!!subiendoFoto}
-            onClick={() => abrirCamara('visor_cero')} 
+            type="button" disabled={!!subiendoFoto} onClick={() => abrirCamara('visor_cero')} 
             className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.visor_cero.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
           >
-            {subiendoFoto === 'visor_cero' ? <span className="text-[10px] animate-pulse">SUBIENDO...</span> : 
-             fotos.visor_cero.url ? <img src={fotos.visor_cero.url} className="w-full h-full object-cover rounded-2xl" /> : <>
-              <span className="text-3xl mb-1">⚖️</span>
-              <span className="text-[9px] font-black uppercase">Visor en Cero</span>
-            </>}
+            {subiendoFoto === 'visor_cero' ? '...' : fotos.visor_cero.url ? <img src={fotos.visor_cero.url} className="w-full h-full object-cover rounded-2xl" /> : '⚖️ Visor Cero'}
           </button>
-
           <button 
-            type="button"
-            disabled={!!subiendoFoto}
-            onClick={() => abrirCamara('tanque_vacio')} 
+            type="button" disabled={!!subiendoFoto} onClick={() => abrirCamara('tanque_vacio')} 
             className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.tanque_vacio.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
           >
-            {subiendoFoto === 'tanque_vacio' ? <span className="text-[10px] animate-pulse">SUBIENDO...</span> :
-             fotos.tanque_vacio.url ? <img src={fotos.tanque_vacio.url} className="w-full h-full object-cover rounded-2xl" /> : <>
-              <span className="text-3xl mb-1">🛢️</span>
-              <span className="text-[9px] font-black uppercase">Tanque Vacío</span>
-            </>}
+            {subiendoFoto === 'tanque_vacio' ? '...' : fotos.tanque_vacio.url ? <img src={fotos.tanque_vacio.url} className="w-full h-full object-cover rounded-2xl" /> : '🛢️ Tanque Vacío'}
           </button>
         </div>
 
         <section className="bg-red-50 p-5 rounded-3xl border border-red-100 space-y-3">
-          <label className="text-[10px] font-black text-red-700 uppercase ml-1">5. Cierre de Batch</label>
+          <label className="text-[10px] font-black text-red-700 uppercase ml-1">5. Cierre</label>
           <div className="flex gap-3">
             <button 
-              type="button"
-              disabled={!!subiendoFoto}
-              onClick={() => abrirCamara('visor_lleno')} 
+              type="button" disabled={!!subiendoFoto} onClick={() => abrirCamara('visor_lleno')} 
               className={`w-1/3 aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center ${fotos.visor_lleno.url ? 'border-red-500 bg-white' : 'border-red-200 text-red-300'}`}
             >
-              {subiendoFoto === 'visor_lleno' ? <span className="text-[10px] animate-pulse">...</span> :
-               fotos.visor_lleno.url ? <img src={fotos.visor_lleno.url} className="w-full h-full object-cover rounded-xl" /> : <span className="text-2xl">📸</span>}
+              {subiendoFoto === 'visor_lleno' ? '...' : fotos.visor_lleno.url ? <img src={fotos.visor_lleno.url} className="w-full h-full object-cover rounded-xl" /> : '📸'}
             </button>
             <input 
-              type="number" 
-              placeholder="PESO FINAL"
-              value={datos.peso_final}
-              className="w-2/3 p-4 rounded-2xl border-2 border-red-100 text-3xl font-black text-red-700 outline-none placeholder:text-red-200 text-center"
+              type="number" placeholder="PESO" value={datos.peso_final}
+              className="w-2/3 p-4 rounded-2xl border-2 border-red-100 text-3xl font-black text-red-700 outline-none text-center"
               onChange={e => setDatos({...datos, peso_final: e.target.value})}
             />
           </div>
         </section>
 
-        <div className="space-y-3">
-          <textarea 
-            placeholder="Observaciones..." 
-            value={datos.observaciones}
-            className="w-full p-4 border-2 rounded-3xl bg-white h-20 text-sm font-semibold outline-none focus:border-red-700"
-            onChange={e=>setDatos({...datos, observaciones: e.target.value})}
-          ></textarea>
-          
-          <button 
-            type="button"
-            disabled={!!subiendoFoto}
-            onClick={() => abrirCamara('incidencia')} 
-            className={`w-full p-4 rounded-2xl border-2 border-dashed text-[10px] font-black transition-all ${fotos.incidencia.url ? 'bg-amber-100 border-amber-500 text-amber-700' : 'border-amber-200 text-amber-400 bg-white'}`}
-          >
-            {subiendoFoto === 'incidencia' ? 'CARGANDO...' : 
-             fotos.incidencia.url ? '✓ EVIDENCIA DE NOVEDAD LISTA' : '+ FOTO JUSTIFICACIÓN / NOVEDAD'}
-          </button>
-        </div>
+        <textarea 
+          placeholder="Observaciones..." value={datos.observaciones}
+          className="w-full p-4 border-2 rounded-3xl bg-white h-20 text-sm font-semibold outline-none focus:border-red-700"
+          onChange={e=>setDatos({...datos, observaciones: e.target.value})}
+        ></textarea>
+        
+        <button 
+          type="button" disabled={!!subiendoFoto} onClick={() => abrirCamara('incidencia')} 
+          className={`w-full p-4 rounded-2xl border-2 border-dashed text-[10px] font-black transition-all ${fotos.incidencia.url ? 'bg-amber-100 border-amber-500 text-amber-700' : 'border-amber-200 text-amber-400 bg-white'}`}
+        >
+          {subiendoFoto === 'incidencia' ? '...' : fotos.incidencia.url ? '✓ EVIDENCIA LISTA' : '+ FOTO JUSTIFICACIÓN'}
+        </button>
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-gray-100">
         <button 
-          onClick={guardarBatch} 
-          disabled={loading || !!subiendoFoto} 
-          className="w-full bg-red-700 text-white py-5 rounded-2xl font-black text-sm tracking-[4px] shadow-2xl active:scale-95 transition-all disabled:bg-gray-400"
+          onClick={guardarBatch} disabled={loading || !!subiendoFoto} 
+          className="w-full bg-red-700 text-white py-5 rounded-2xl font-black text-sm tracking-[4px] shadow-2xl disabled:bg-gray-400"
         >
           {loading ? 'SINCRONIZANDO...' : 'GUARDAR PESADA'}
         </button>
