@@ -35,7 +35,7 @@ export default function ProcesoLlenado() {
     incidencia: { url: '' }
   });
 
-  // --- LÓGICA DE RECUPERACIÓN Y RESERVA SEGURA ---
+  // --- LÓGICA DE RECUPERACIÓN Y RESERVA CON BÚSQUEDA DE ID MÁXIMO ---
   useEffect(() => {
     setIsClient(true);
     
@@ -45,31 +45,43 @@ export default function ProcesoLlenado() {
       const borradorBatch = localStorage.getItem('draft_batchId');
 
       if (borradorDatos) setDatos(JSON.parse(borradorDatos));
-      if (borradorBatch) setBatchId(borradorBatch);
       if (borradorFotos) setFotos(JSON.parse(borradorFotos));
 
-      if (!borradorBatch) {
+      // Si ya hay un batch guardado en el teléfono, lo usamos
+      if (borradorBatch) {
+        setBatchId(borradorBatch);
+      } else {
+        // SI NO HAY BATCH, GENERAMOS EL SIGUIENTE DISPONIBLE
         const hoy = new Date();
         const d = String(hoy.getDate()).padStart(2, '0');
         const m = String(hoy.getMonth() + 1).padStart(2, '0');
         const a = String(hoy.getFullYear()).slice(-2);
         const prefix = `EXT${d}${m}${a}`;
         
-        // 1. Obtener el conteo base de hoy
-        const { count } = await supabase
+        // 1. Buscamos el ID más alto registrado hoy
+        const { data: registrosHoy } = await supabase
           .from('procesos_batch')
-          .select('*', { count: 'exact', head: true })
-          .like('batch_id', `${prefix}%`);
+          .select('batch_id')
+          .like('batch_id', `${prefix}%`)
+          .order('batch_id', { ascending: false })
+          .limit(1);
 
-        let numSecuencia = (count || 0) + 1;
+        let siguienteNumero = 1;
+
+        if (registrosHoy && registrosHoy.length > 0) {
+          // Extraemos los últimos 2 dígitos del ID más alto y sumamos 1
+          const ultimoId = registrosHoy[0].batch_id;
+          const ultimoSecuencial = parseInt(ultimoId.slice(-2));
+          siguienteNumero = ultimoSecuencial + 1;
+        }
+
         let registroExitoso = false;
         let idFinal = "";
 
-        // 2. Bucle para asegurar que el ID no esté duplicado en la DB
+        // 2. Bucle de seguridad para insertar (Reserva el ID inmediatamente)
         while (!registroExitoso) {
-          idFinal = `${prefix}${String(numSecuencia).padStart(2, '0')}`;
+          idFinal = `${prefix}${String(siguienteNumero).padStart(2, '0')}`;
           
-          // Intentamos una "reserva" rápida
           const { error: insertError } = await supabase
             .from('procesos_batch')
             .insert([{ 
@@ -78,11 +90,12 @@ export default function ProcesoLlenado() {
             }]);
 
           if (!insertError) {
-            registroExitoso = true; // El número estaba libre y lo reservamos
+            registroExitoso = true; // Guardado con éxito
           } else if (insertError.code === '23505') { 
-            numSecuencia++; // El número ya existe, intentamos con el siguiente
+            // Si el código es 23505 (duplicado), intentamos con el siguiente
+            siguienteNumero++;
           } else {
-            console.error("Error reserva:", insertError);
+            console.error("Error al reservar ID:", insertError);
             break;
           }
         }
@@ -106,7 +119,6 @@ export default function ProcesoLlenado() {
     inicializar();
   }, []);
 
-  // --- AUTO-GUARDADO EN LOCALSTORAGE ---
   useEffect(() => {
     if (isClient && batchId !== 'Cargando...') {
       localStorage.setItem('draft_datos', JSON.stringify(datos));
@@ -173,14 +185,13 @@ export default function ProcesoLlenado() {
       hora_foto_visor_lleno: getEcuadorFechaManual()
     };
 
-    // USAMOS UPDATE PARA LLENAR EL REGISTRO QUE YA RESERVAMOS
+    // USAMOS UPDATE para completar el registro que ya existe (el que reservamos al inicio)
     const { error } = await supabase
       .from('procesos_batch')
       .update(payload)
       .eq('batch_id', batchId);
 
     if (error) {
-      console.error(error);
       alert("Error al guardar: " + error.message);
     } else {
       alert("✅ BATCH GUARDADO CON ÉXITO");
@@ -189,18 +200,8 @@ export default function ProcesoLlenado() {
       localStorage.removeItem('draft_fotos');
       localStorage.removeItem('draft_batchId');
       
-      // Resetear estados
-      setDatos({ operador_id: '', variedad: '', proveedor: '', turno: '', peso_final: '', observaciones: '' });
-      setFotos({
-        visor_cero: { url: '', hora: null },
-        tanque_vacio: { url: '', hora: null },
-        visor_lleno: { url: '', hora: null },
-        incidencia: { url: '' }
-      });
-
-      setTimeout(() => {
-        window.location.href = window.location.pathname;
-      }, 800);
+      // Recargar la página limpia para el siguiente batch
+      window.location.reload();
     }
     setLoading(false);
   };
@@ -219,7 +220,7 @@ export default function ProcesoLlenado() {
       <div className="p-5 space-y-5">
         <section className="bg-white p-5 rounded-3xl border shadow-sm space-y-4">
           <div>
-            <label className="text-[10px] font-black text-red-700 uppercase ml-1">1. Operador</label>
+            <label className="text-[10px] font-black text-red-700 uppercase ml-1">1. Seleccione Operador</label>
             <select 
               className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
               value={datos.operador_id}
@@ -232,7 +233,7 @@ export default function ProcesoLlenado() {
 
           <div className="grid grid-cols-1 gap-4">
             <div>
-              <label className="text-[10px] font-black text-red-700 uppercase ml-1">2. Variedad</label>
+              <label className="text-[10px] font-black text-red-700 uppercase ml-1">2. Variedad de Palma</label>
               <select 
                 className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
                 value={datos.variedad}
@@ -243,7 +244,7 @@ export default function ProcesoLlenado() {
               </select>
             </div>
             <div>
-              <label className="text-[10px] font-black text-red-700 uppercase ml-1">3. Proveedor</label>
+              <label className="text-[10px] font-black text-red-700 uppercase ml-1">3. Proveedor MP</label>
               <select 
                 className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
                 value={datos.proveedor}
@@ -254,7 +255,7 @@ export default function ProcesoLlenado() {
               </select>
             </div>
             <div>
-              <label className="text-[10px] font-black text-red-700 uppercase ml-1">4. Turno</label>
+              <label className="text-[10px] font-black text-red-700 uppercase ml-1">4. Turno de Trabajo</label>
               <select 
                 className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
                 value={datos.turno}
@@ -269,54 +270,79 @@ export default function ProcesoLlenado() {
 
         <div className="grid grid-cols-2 gap-3">
           <button 
-            type="button" disabled={!!subiendoFoto} onClick={() => abrirCamara('visor_cero')} 
+            type="button"
+            disabled={!!subiendoFoto}
+            onClick={() => abrirCamara('visor_cero')} 
             className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.visor_cero.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
           >
-            {subiendoFoto === 'visor_cero' ? '...' : fotos.visor_cero.url ? <img src={fotos.visor_cero.url} className="w-full h-full object-cover rounded-2xl" /> : '⚖️ Visor Cero'}
+            {subiendoFoto === 'visor_cero' ? <span className="text-[10px] animate-pulse">SUBIENDO...</span> : 
+             fotos.visor_cero.url ? <img src={fotos.visor_cero.url} className="w-full h-full object-cover rounded-2xl" /> : <>
+              <span className="text-3xl mb-1">⚖️</span>
+              <span className="text-[9px] font-black uppercase">Visor en Cero</span>
+            </>}
           </button>
+
           <button 
-            type="button" disabled={!!subiendoFoto} onClick={() => abrirCamara('tanque_vacio')} 
+            type="button"
+            disabled={!!subiendoFoto}
+            onClick={() => abrirCamara('tanque_vacio')} 
             className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.tanque_vacio.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
           >
-            {subiendoFoto === 'tanque_vacio' ? '...' : fotos.tanque_vacio.url ? <img src={fotos.tanque_vacio.url} className="w-full h-full object-cover rounded-2xl" /> : '🛢️ Tanque Vacío'}
+            {subiendoFoto === 'tanque_vacio' ? <span className="text-[10px] animate-pulse">SUBIENDO...</span> :
+             fotos.tanque_vacio.url ? <img src={fotos.tanque_vacio.url} className="w-full h-full object-cover rounded-2xl" /> : <>
+              <span className="text-3xl mb-1">🛢️</span>
+              <span className="text-[9px] font-black uppercase">Tanque Vacío</span>
+            </>}
           </button>
         </div>
 
         <section className="bg-red-50 p-5 rounded-3xl border border-red-100 space-y-3">
-          <label className="text-[10px] font-black text-red-700 uppercase ml-1">5. Cierre</label>
+          <label className="text-[10px] font-black text-red-700 uppercase ml-1">5. Cierre de Batch</label>
           <div className="flex gap-3">
             <button 
-              type="button" disabled={!!subiendoFoto} onClick={() => abrirCamara('visor_lleno')} 
+              type="button"
+              disabled={!!subiendoFoto}
+              onClick={() => abrirCamara('visor_lleno')} 
               className={`w-1/3 aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center ${fotos.visor_lleno.url ? 'border-red-500 bg-white' : 'border-red-200 text-red-300'}`}
             >
-              {subiendoFoto === 'visor_lleno' ? '...' : fotos.visor_lleno.url ? <img src={fotos.visor_lleno.url} className="w-full h-full object-cover rounded-xl" /> : '📸'}
+              {subiendoFoto === 'visor_lleno' ? <span className="text-[10px] animate-pulse">...</span> :
+               fotos.visor_lleno.url ? <img src={fotos.visor_lleno.url} className="w-full h-full object-cover rounded-xl" /> : <span className="text-2xl">📸</span>}
             </button>
             <input 
-              type="number" placeholder="PESO" value={datos.peso_final}
-              className="w-2/3 p-4 rounded-2xl border-2 border-red-100 text-3xl font-black text-red-700 outline-none text-center"
+              type="number" 
+              placeholder="PESO FINAL"
+              value={datos.peso_final}
+              className="w-2/3 p-4 rounded-2xl border-2 border-red-100 text-3xl font-black text-red-700 outline-none placeholder:text-red-200 text-center"
               onChange={e => setDatos({...datos, peso_final: e.target.value})}
             />
           </div>
         </section>
 
-        <textarea 
-          placeholder="Observaciones..." value={datos.observaciones}
-          className="w-full p-4 border-2 rounded-3xl bg-white h-20 text-sm font-semibold outline-none focus:border-red-700"
-          onChange={e=>setDatos({...datos, observaciones: e.target.value})}
-        ></textarea>
-        
-        <button 
-          type="button" disabled={!!subiendoFoto} onClick={() => abrirCamara('incidencia')} 
-          className={`w-full p-4 rounded-2xl border-2 border-dashed text-[10px] font-black transition-all ${fotos.incidencia.url ? 'bg-amber-100 border-amber-500 text-amber-700' : 'border-amber-200 text-amber-400 bg-white'}`}
-        >
-          {subiendoFoto === 'incidencia' ? '...' : fotos.incidencia.url ? '✓ EVIDENCIA LISTA' : '+ FOTO JUSTIFICACIÓN'}
-        </button>
+        <div className="space-y-3">
+          <textarea 
+            placeholder="Observaciones..." 
+            value={datos.observaciones}
+            className="w-full p-4 border-2 rounded-3xl bg-white h-20 text-sm font-semibold outline-none focus:border-red-700"
+            onChange={e=>setDatos({...datos, observaciones: e.target.value})}
+          ></textarea>
+          
+          <button 
+            type="button"
+            disabled={!!subiendoFoto}
+            onClick={() => abrirCamara('incidencia')} 
+            className={`w-full p-4 rounded-2xl border-2 border-dashed text-[10px] font-black transition-all ${fotos.incidencia.url ? 'bg-amber-100 border-amber-500 text-amber-700' : 'border-amber-200 text-amber-400 bg-white'}`}
+          >
+            {subiendoFoto === 'incidencia' ? 'CARGANDO...' : 
+             fotos.incidencia.url ? '✓ EVIDENCIA DE NOVEDAD LISTA' : '+ FOTO JUSTIFICACIÓN / NOVEDAD'}
+          </button>
+        </div>
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-gray-100">
         <button 
-          onClick={guardarBatch} disabled={loading || !!subiendoFoto} 
-          className="w-full bg-red-700 text-white py-5 rounded-2xl font-black text-sm tracking-[4px] shadow-2xl disabled:bg-gray-400"
+          onClick={guardarBatch} 
+          disabled={loading || !!subiendoFoto} 
+          className="w-full bg-red-700 text-white py-5 rounded-2xl font-black text-sm tracking-[4px] shadow-2xl active:scale-95 transition-all disabled:bg-gray-400"
         >
           {loading ? 'SINCRONIZANDO...' : 'GUARDAR PESADA'}
         </button>
