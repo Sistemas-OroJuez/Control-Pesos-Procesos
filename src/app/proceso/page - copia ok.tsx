@@ -17,6 +17,7 @@ export default function ProcesoLlenado() {
   const [listaOperadores, setListaOperadores] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   
+  // Nuevo estado para controlar qué foto se está subiendo actualmente
   const [subiendoFoto, setSubiendoFoto] = useState<string | null>(null);
 
   const [datos, setDatos] = useState({
@@ -35,11 +36,12 @@ export default function ProcesoLlenado() {
     incidencia: { url: '' }
   });
 
-  // --- LÓGICA DE RECUPERACIÓN Y RESERVA DE ID ---
+  // --- LÓGICA DE RECUPERACIÓN (AL CARGAR) ---
   useEffect(() => {
     setIsClient(true);
     
     async function inicializar() {
+      // Intentar recuperar borradores
       const borradorDatos = localStorage.getItem('draft_datos');
       const borradorFotos = localStorage.getItem('draft_fotos');
       const borradorBatch = localStorage.getItem('draft_batchId');
@@ -48,7 +50,6 @@ export default function ProcesoLlenado() {
       if (borradorBatch) setBatchId(borradorBatch);
       if (borradorFotos) setFotos(JSON.parse(borradorFotos));
 
-      // SI NO HAY UN BATCH EN CURSO, GENERAMOS UNO NUEVO Y LO RESERVAMOS EN LA DB
       if (!borradorBatch) {
         const hoy = new Date();
         const d = String(hoy.getDate()).padStart(2, '0');
@@ -56,23 +57,13 @@ export default function ProcesoLlenado() {
         const a = String(hoy.getFullYear()).slice(-2);
         const prefix = `EXT${d}${m}${a}`;
         
-        // Contamos cuántos hay (incluyendo los reservados)
         const { count } = await supabase
           .from('procesos_batch')
           .select('*', { count: 'exact', head: true })
           .like('batch_id', `${prefix}%`);
 
         const sequence = String((count || 0) + 1).padStart(2, '0');
-        const nuevoId = `${prefix}${sequence}`;
-        
-        // PASO CLAVE: Insertamos el registro inmediatamente para "apartar" el número
-        await supabase.from('procesos_batch').insert([{ 
-          batch_id: nuevoId,
-          fecha_hora_inicio: new Date().toISOString() 
-        }]);
-
-        setBatchId(nuevoId);
-        localStorage.setItem('draft_batchId', nuevoId);
+        setBatchId(`${prefix}${sequence}`);
       }
 
       const [resParams, resOps] = await Promise.all([
@@ -90,8 +81,9 @@ export default function ProcesoLlenado() {
     inicializar();
   }, []);
 
+  // --- LÓGICA DE AUTO-GUARDADO DE DATOS ---
   useEffect(() => {
-    if (isClient && batchId !== 'Cargando...') {
+    if (isClient) {
       localStorage.setItem('draft_datos', JSON.stringify(datos));
       localStorage.setItem('draft_batchId', batchId);
       localStorage.setItem('draft_fotos', JSON.stringify(fotos));
@@ -100,6 +92,7 @@ export default function ProcesoLlenado() {
 
   if (!isClient) return null;
 
+  // --- FUNCIÓN DE CÁMARA CON SUBIDA INMEDIATA ---
   const abrirCamara = async (tipo: keyof typeof fotos) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -109,13 +102,19 @@ export default function ProcesoLlenado() {
     input.onchange = async (e: any) => {
       const file = e.target.files[0];
       if (file) {
-        setSubiendoFoto(tipo);
+        setSubiendoFoto(tipo); // Bloquea el botón visualmente
         try {
+          // Subir directamente al Storage apenas se toma
           const urlNube = await subirImagen(file, tipo);
-          const nuevaInfoFoto = { url: urlNube, hora: new Date().toISOString() };
+          
+          const nuevaInfoFoto = { 
+            url: urlNube, 
+            hora: new Date().toISOString() 
+          };
+
           setFotos(prev => ({ ...prev, [tipo]: nuevaInfoFoto }));
         } catch (error) {
-          alert("Error al subir la imagen a la nube.");
+          alert("Error al subir la imagen a la nube. Intente nuevamente.");
         } finally {
           setSubiendoFoto(null);
         }
@@ -124,7 +123,7 @@ export default function ProcesoLlenado() {
     input.click();
   };
 
-  const guardarBatch = async () => {
+const guardarBatch = async () => {
     if (!datos.operador_id || !datos.variedad || !datos.proveedor || !datos.turno || !datos.peso_final) {
       alert("Por favor complete todos los campos y tome las fotos requeridas");
       return;
@@ -163,8 +162,7 @@ export default function ProcesoLlenado() {
       hora_foto_visor_lleno: getEcuadorFechaManual()
     };
 
-    // USAMOS UPSERT: Actualiza el registro que reservamos al inicio
-    const { error } = await supabase.from('procesos_batch').upsert([payload]);
+    const { error } = await supabase.from('procesos_batch').insert([payload]);
 
     if (error) {
       console.error(error);
@@ -172,12 +170,18 @@ export default function ProcesoLlenado() {
     } else {
       alert("✅ BATCH GUARDADO CON ÉXITO");
       
+      // Limpiar estados y localStorage inmediatamente antes de recargar
       localStorage.removeItem('draft_datos');
       localStorage.removeItem('draft_fotos');
       localStorage.removeItem('draft_batchId');
       
       setDatos({
-        operador_id: '', variedad: '', proveedor: '', turno: '', peso_final: '', observaciones: ''
+        operador_id: '',
+        variedad: '',
+        proveedor: '',
+        turno: '',
+        peso_final: '',
+        observaciones: ''
       });
 
       setFotos({
@@ -187,6 +191,7 @@ export default function ProcesoLlenado() {
         incidencia: { url: '' }
       });
 
+      // Refrescar con una pequeña pausa para asegurar que el conteo en la DB se actualice
       setTimeout(() => {
         window.location.href = window.location.pathname;
       }, 800);
@@ -256,6 +261,7 @@ export default function ProcesoLlenado() {
           </div>
         </section>
 
+        {/* FOTOS DE INICIO CON CARGA INDIVIDUAL */}
         <div className="grid grid-cols-2 gap-3">
           <button 
             type="button"
@@ -284,6 +290,7 @@ export default function ProcesoLlenado() {
           </button>
         </div>
 
+        {/* PESO Y FOTO FINAL */}
         <section className="bg-red-50 p-5 rounded-3xl border border-red-100 space-y-3">
           <label className="text-[10px] font-black text-red-700 uppercase ml-1">5. Cierre de Batch</label>
           <div className="flex gap-3">
