@@ -14,16 +14,15 @@ export default function Dashboard() {
 
   async function getProfile() {
     try {
-      // 1. Obtener el usuario de la sesión actual
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
-        router.push('/'); // Si no hay sesión, volver al login
+        router.push('/'); 
         return;
       }
 
-      // 2. Consultar el rol en la tabla empleados
-      const { data: empleado, error } = await supabase
+      // Buscamos el rol en la tabla empleados
+      const { data: empleado } = await supabase
         .from('empleados')
         .select('rol')
         .eq('email', user.email)
@@ -39,85 +38,76 @@ export default function Dashboard() {
     }
   }
 
-  // Definición de todos los módulos
+  // Lista maestra de módulos con su nivel de acceso
   const allModules = [
-    { id: 3, name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', protected: false },
-    { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros', protected: true },
-    { id: 4, name: 'Reportes Generales', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes', protected: false },
-    { id: 5, name: 'Reportes Gerenciales', icon: '📊', color: 'bg-white text-gray-800', route: '/gerencia', protected: true },
-    { id: 7, name: 'Estadísticas y Tiempos', icon: '⏱️', color: 'bg-white text-gray-800', route: '/estadisticas', protected: true },
-    { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', protected: true },
+    { id: 3, name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', adminOnly: false },
+    { id: 4, name: 'Reportes Generales', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes', adminOnly: false },
+    { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros', adminOnly: true },
+    { id: 5, name: 'Reportes Gerenciales', icon: '📊', color: 'bg-white text-gray-800', route: '/gerencia', adminOnly: true },
+    { id: 7, name: 'Estadísticas y Tiempos', icon: '⏱️', color: 'bg-white text-gray-800', route: '/estadisticas', adminOnly: true },
+    { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
   ];
 
-  // Filtrar módulos: Si es operador, ocultar los protegidos
-  const modules = allModules.filter(mod => {
-    if (userRole === 'operador' && mod.protected) return false;
-    return true;
+  // FILTRO: Si el usuario es operador, quitamos los módulos que son 'adminOnly'
+  const allowedModules = allModules.filter(mod => {
+    if (userRole === 'operador') {
+      return !mod.adminOnly; // Solo devuelve los que NO son exclusivos de admin
+    }
+    return true; // El administrador ve todo
   });
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <p className="font-black text-gray-400 animate-pulse uppercase tracking-widest">Verificando Credenciales...</p>
+        <p className="font-black text-gray-400 animate-pulse uppercase">Verificando Acceso...</p>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* HEADER CORPORATIVO */}
       <header className="bg-white shadow-md border-b-4 border-red-700 p-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="bg-red-700 p-2 rounded-lg">
               <span className="text-white font-black italic text-xl">ORJ</span>
             </div>
-            <div>
-              <h2 className="text-xs font-black text-gray-800 uppercase leading-none">Control de Pesos</h2>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Panel de Control Principal</p>
-            </div>
+            <h2 className="text-xs font-black text-gray-800 uppercase leading-none md:block hidden">
+              Control de Pesos <br/> <span className="text-gray-400">Dashboard</span>
+            </h2>
           </div>
           
           <div className="flex items-center gap-4">
-             <span className="hidden md:block text-[10px] font-black bg-gray-200 px-3 py-1 rounded-full text-gray-600 uppercase">
-                Perfil: {userRole || 'Cargando...'}
+             <span className="text-[10px] font-black bg-slate-100 px-3 py-1 rounded-full text-slate-600 uppercase border border-slate-200">
+                {userRole === 'administrador' ? '🛡️ Admin' : '👷 Operador'}
              </span>
              <button 
                 onClick={async () => {
                   await supabase.auth.signOut();
                   router.push('/');
                 }}
-                className="bg-gray-800 hover:bg-black text-white px-5 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2 shadow-lg"
+                className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-[10px] uppercase shadow-lg"
               >
-                <span>🚪</span> SALIR
+                Salir
               </button>
           </div>
         </div>
       </header>
 
-      {/* CUADRÍCULA DE MÓDULOS FILTRADA */}
-      <main className="max-w-6xl mx-auto p-6 md:p-12">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {modules.map((mod) => (
+      <main className="max-w-6xl mx-auto p-6 mt-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6 max-w-4xl mx-auto">
+          {allowedModules.map((mod) => (
             <button
               key={mod.id}
               onClick={() => router.push(mod.route)}
-              className={mod.color + " p-10 rounded-2xl shadow-sm border border-gray-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center group"}
+              className={mod.color + " p-12 rounded-[2.5rem] shadow-sm border border-gray-200 hover:shadow-2xl hover:-translate-y-1 transition-all flex flex-col items-center justify-center group"}
             >
-              <span className="text-4xl mb-4 group-hover:scale-110 transition-transform">
-                {mod.icon}
-              </span>
-              <span className="font-bold uppercase text-[11px] tracking-widest text-center px-2 leading-tight">
-                {mod.name}
-              </span>
+              <span className="text-5xl mb-4 group-hover:scale-110 transition-transform">{mod.icon}</span>
+              <span className="font-black uppercase text-xs tracking-widest text-center">{mod.name}</span>
             </button>
           ))}
         </div>
       </main>
-
-      <footer className="fixed bottom-0 w-full p-4 text-center bg-gray-100/80 backdrop-blur-sm">
-        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">© 2026 OROJUEZ - Sistema de Control Operativo</p>
-      </footer>
     </div>
   );
 }
