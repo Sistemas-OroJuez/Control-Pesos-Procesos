@@ -5,20 +5,18 @@ import { useRouter } from 'next/navigation';
 export default function Dashboard() {
   const router = useRouter();
   
-  // Estados principales
+  // Estado inicializado desde localStorage para persistencia
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isMounted, setIsMounted] = useState(false); // Control para evitar error en Vercel
 
-  // 1. Efecto de Montaje: Solo se ejecuta en el cliente (navegador)
+  // Efecto para cargar el estado guardado al iniciar
   useEffect(() => {
-    setIsMounted(true); // Confirmamos que el componente ya está en el navegador
     const savedAdminStatus = localStorage.getItem('orj_admin_access');
     if (savedAdminStatus === 'true') {
       setIsAdmin(true);
     }
   }, []);
 
-  // Función para pedir la clave y guardarla
+  // Función para pedir la clave y guardarla en el navegador
   const handleLogoClick = () => {
     if (isAdmin) {
       const confirmLock = confirm("¿Desea cerrar el modo administrador?");
@@ -32,7 +30,7 @@ export default function Dashboard() {
     const password = prompt("Ingrese clave de administrador para desbloquear funciones:");
     if (password === 'orj2026') { 
       setIsAdmin(true);
-      localStorage.setItem('orj_admin_access', 'true');
+      localStorage.setItem('orj_admin_access', 'true'); // Persistencia activada
       alert("Funciones de administrador desbloqueadas.");
     } else if (password !== null) {
       alert("Clave incorrecta.");
@@ -48,18 +46,7 @@ export default function Dashboard() {
     { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
   ];
 
-  // Filtramos los módulos según el estado
   const filteredModules = modules.filter(mod => isAdmin ? true : !mod.adminOnly);
-
-  // 2. Si no ha terminado de montar, mostramos un estado de carga breve
-  // Esto evita que Vercel intente adivinar el contenido y falle
-  if (!isMounted) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <p className="text-gray-400 font-bold animate-pulse uppercase tracking-widest text-xs">Cargando Panel...</p>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -86,7 +73,7 @@ export default function Dashboard() {
           
           <button 
             onClick={() => {
-              localStorage.removeItem('orj_admin_access');
+              localStorage.removeItem('orj_admin_access'); // Limpiar al salir
               router.push('/');
             }}
             className="bg-gray-800 hover:bg-black text-white px-5 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2 shadow-lg"
