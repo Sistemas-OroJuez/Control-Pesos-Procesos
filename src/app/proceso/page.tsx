@@ -123,7 +123,7 @@ export default function ProcesoLlenado() {
     input.click();
   };
 
-  const guardarBatch = async () => {
+const guardarBatch = async () => {
     if (!datos.operador_id || !datos.variedad || !datos.proveedor || !datos.turno || !datos.peso_final) {
       alert("Por favor complete todos los campos y tome las fotos requeridas");
       return;
@@ -131,12 +131,16 @@ export default function ProcesoLlenado() {
 
     setLoading(true);
 
-    // FUNCIÓN PARA AJUSTAR A HORARIO ECUADOR (UTC-5)
     const getEcuadorISO = () => {
       const ahora = new Date();
-      // Restamos 5 horas manualmente para que Supabase lo guarde con la fecha local de Ecuador
       ahora.setHours(ahora.getHours() - 5); 
       return ahora.toISOString();
+    };
+
+    // Ajuste de -5 horas para fechas manuales
+    const ajustarHuso = (fechaStr: string | null) => {
+      if (!fechaStr) return getEcuadorISO();
+      return new Date(new Date(fechaStr).getTime() - (5 * 60 * 60 * 1000)).toISOString();
     };
 
     const payload = {
@@ -147,17 +151,18 @@ export default function ProcesoLlenado() {
       turno: datos.turno,
       peso_final_digitado: datos.peso_final,
       observaciones: datos.observaciones,
-      // Aplicamos el ajuste de -5 horas a todos los campos de tiempo
-      fecha_hora_inicio: fotos.visor_cero.hora ? new Date(new Date(fotos.visor_cero.hora).getTime() - (5 * 60 * 60 * 1000)).toISOString() : getEcuadorISO(),
-      fecha_hora_foto_2: fotos.tanque_vacio.hora ? new Date(new Date(fotos.tanque_vacio.hora).getTime() - (5 * 60 * 60 * 1000)).toISOString() : getEcuadorISO(),
+      
+      // COLUMNAS CORREGIDAS SEGÚN TU SQL:
+      fecha_hora_inicio: ajustarHuso(fotos.visor_cero.hora),
       fecha_hora_fin: getEcuadorISO(),
+      
       foto_visor_cero_url: fotos.visor_cero.url,
       foto_tanque_vacio_url: fotos.tanque_vacio.url,
       foto_visor_lleno_url: fotos.visor_lleno.url,
       foto_justificacion_url: fotos.incidencia.url,
-      // Estos campos son los que usas para mostrar la hora en el reporte
-      hora_foto_visor_cero: fotos.visor_cero.hora ? new Date(new Date(fotos.visor_cero.hora).getTime() - (5 * 60 * 60 * 1000)).toISOString() : null,
-      hora_foto_tanque_vacio: fotos.tanque_vacio.hora ? new Date(new Date(fotos.tanque_vacio.hora).getTime() - (5 * 60 * 60 * 1000)).toISOString() : null,
+      
+      hora_foto_visor_cero: ajustarHuso(fotos.visor_cero.hora),
+      hora_foto_tanque_vacio: ajustarHuso(fotos.tanque_vacio.hora), // Antes decía fecha_hora_foto_2
       hora_foto_visor_lleno: getEcuadorISO()
     };
 
