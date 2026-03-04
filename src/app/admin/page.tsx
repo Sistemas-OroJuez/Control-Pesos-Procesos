@@ -9,9 +9,7 @@ import { useRouter } from 'next/navigation';
 export default function GestionUsuarios() {
   const router = useRouter();
   
-  // ESCUDO DE HIDRATACIÓN: Estado para asegurar que estamos en el cliente
   const [isClient, setIsClient] = useState(false);
-  
   const [usuarios, setUsuarios] = useState<any[]>([]);
   const [localidades, setLocalidades] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -25,10 +23,8 @@ export default function GestionUsuarios() {
   const [rol, setRol] = useState('operador');
   const [localidadId, setLocalidadId] = useState('');
 
-  // Formulario Localidad
   const [nuevaLocalidad, setNuevaLocalidad] = useState('');
 
-  // Solo se activa al cargar en el navegador
   useEffect(() => {
     setIsClient(true);
     cargarUsuarios();
@@ -46,7 +42,8 @@ export default function GestionUsuarios() {
 
   async function cargarUsuarios() {
     try {
-      const { data } = await supabase.from('perfiles').select('*').order('created_at');
+      // Se utiliza la tabla empleados según la estructura proporcionada
+      const { data } = await supabase.from('empleados').select('*').order('created_at');
       if (data) setUsuarios(data);
     } catch (e) {
       console.error("Error al cargar usuarios");
@@ -69,7 +66,7 @@ export default function GestionUsuarios() {
   const handleEliminar = async (id: string) => {
     if (!confirm("¿Estás seguro de eliminar este usuario?")) return;
     setLoading(true);
-    const { error } = await supabase.from('perfiles').delete().eq('id', id);
+    const { error } = await supabase.from('empleados').delete().eq('id', id);
     if (error) alert(error.message);
     else setUsuarios(usuarios.filter(u => u.id !== id));
     setLoading(false);
@@ -78,8 +75,8 @@ export default function GestionUsuarios() {
   const handleGuardarEdicion = async (id: string) => {
     setLoading(true);
     const { error } = await supabase
-      .from('perfiles')
-      .update({ nombre, telefono, rol, localidad_id: localidadId })
+      .from('empleados')
+      .update({ nombre, celular: telefono, rol, localidad_id: localidadId, email, password })
       .eq('id', id);
     if (error) alert(error.message);
     else {
@@ -97,15 +94,13 @@ export default function GestionUsuarios() {
   async function crearUsuario(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email, password,
-      options: { data: { nombre, telefono, rol, localidad_id: localidadId } }
-    });
-    if (authError) alert(authError.message);
-    else if (authData.user) {
-      await supabase.from('perfiles').upsert([{ 
-        id: authData.user.id, nombre, telefono, rol, localidad_id: localidadId 
-      }]);
+    // Registro en la tabla empleados con los campos requeridos
+    const { error } = await supabase.from('empleados').insert([{ 
+      nombre, email, password, celular: telefono, rol, localidad_id: localidadId 
+    }]);
+    
+    if (error) alert(error.message);
+    else {
       alert("Usuario creado");
       limpiarFormulario();
       cargarUsuarios();
@@ -113,7 +108,6 @@ export default function GestionUsuarios() {
     setLoading(false);
   }
 
-  // Si Next.js intenta pre-renderizar en el Build, esto lo detiene pacíficamente
   if (!isClient) {
     return (
       <div className="min-h-screen bg-gray-100 p-4 flex items-center justify-center">
@@ -157,12 +151,10 @@ export default function GestionUsuarios() {
                 <input type="text" placeholder="Nombre" className="p-4 bg-gray-50 rounded-2xl border font-bold outline-none" value={nombre} onChange={e => setNombre(e.target.value)} required />
                 <input type="tel" placeholder="Celular" className="p-4 bg-gray-50 rounded-2xl border font-bold outline-none" value={telefono} onChange={e => setTelefono(e.target.value)} />
               </div>
-              {!editandoId && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <input type="email" placeholder="Email" className="p-4 bg-gray-50 rounded-2xl border font-bold outline-none" value={email} onChange={e => setEmail(e.target.value)} required />
-                  <input type="password" placeholder="Clave" className="p-4 bg-gray-50 rounded-2xl border font-bold outline-none" value={password} onChange={e => setPassword(e.target.value)} required />
-                </div>
-              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <input type="email" placeholder="Email" className="p-4 bg-gray-50 rounded-2xl border font-bold outline-none" value={email} onChange={e => setEmail(e.target.value)} required />
+                <input type="text" placeholder="Contraseña" className="p-4 bg-gray-50 rounded-2xl border font-bold outline-none" value={password} onChange={e => setPassword(e.target.value)} required />
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <select className="p-4 bg-gray-50 rounded-2xl border font-bold outline-none" value={rol} onChange={e => setRol(e.target.value)}>
                   <option value="operador">OPERADOR</option>
@@ -185,16 +177,22 @@ export default function GestionUsuarios() {
           <section className="space-y-3">
             {usuarios.map(u => (
               <div key={u.id} className="bg-white p-4 rounded-3xl flex justify-between items-center shadow-sm border border-gray-200">
-                <div>
+                <div className="flex-1">
                   <p className="font-black text-gray-800 text-sm uppercase">{u.nombre}</p>
-                  <div className="flex gap-2 items-center">
-                    <span className="text-[8px] font-black px-2 py-0.5 rounded-md bg-red-50 text-red-700 uppercase">{u.rol}</span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 mt-1">
+                    <span className="text-[10px] text-blue-600 font-bold">📧 {u.email}</span>
+                    <span className="text-[10px] text-green-600 font-bold">🔑 {u.password}</span>
+                    <span className="text-[10px] text-gray-500 font-bold">📞 {u.celular || 'S/N'}</span>
                     <span className="text-[9px] font-bold text-gray-400">🏠 {localidades.find(l => l.id === u.localidad_id)?.nombre || 'Sin Sede'}</span>
+                  </div>
+                  <div className="mt-2">
+                    <span className="text-[8px] font-black px-2 py-0.5 rounded-md bg-red-50 text-red-700 uppercase">{u.rol}</span>
                   </div>
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => {
-                    setEditandoId(u.id); setNombre(u.nombre); setTelefono(u.telefono || ''); setRol(u.rol); setLocalidadId(u.localidad_id || '');
+                    setEditandoId(u.id); setNombre(u.nombre); setTelefono(u.celular || ''); setRol(u.rol); setLocalidadId(u.localidad_id || '');
+                    setEmail(u.email); setPassword(u.password);
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }} className="p-3 text-gray-400">⚙️</button>
                   <button onClick={() => handleEliminar(u.id)} className="p-3 text-gray-400">🗑️</button>
