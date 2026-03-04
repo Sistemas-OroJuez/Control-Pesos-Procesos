@@ -98,16 +98,37 @@ export default function ReporteGeneralCompleto() {
   };
 
   const enviarWhatsApp = () => {
-    if (datos.length === 0) return;
+    if (datos.length === 0) {
+      alert("No hay datos para enviar.");
+      return;
+    }
+
+    // 1. Obtener lista de variedades únicas presentes en la consulta actual
+    const variedades = Array.from(new Set(datos.map(d => d.variedad)));
+    let resumenVariedades = "";
     
+    // 2. Calcular subtotales por cada variedad
+    variedades.forEach(v => {
+      const items = datos.filter(d => d.variedad === v);
+      const subtotal = items.reduce((acc, c) => acc + Number(c.peso_final_digitado || 0), 0);
+      resumenVariedades += `✅ *${v}*: ${items.length} batches - ${subtotal.toLocaleString()} kg\n`;
+    });
+
+    // 3. Construir el mensaje estructurado
     const mensaje = 
       `📊 *REPORTE GENERAL OROJUEZ*\n` +
       `📅 *Periodo:* ${filtros.desde} al ${filtros.hasta}\n` +
-      `🔢 *Total Batches:* ${datos.length}\n` +
+      `----------------------------------\n` +
+      `🔢 *Total Batches:* ${datos.length}\n\n` +
+      `*DETALLE POR VARIEDAD:*\n` +
+      `${resumenVariedades}\n` +
+      `----------------------------------\n` +
       `🚀 *TOTAL PESADO:* ${totalPeso.toLocaleString()} KG\n\n` +
       `_Generado desde el Panel de Auditoría_`;
 
-    window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
+    // 4. Abrir WhatsApp
+    const url = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
+    window.open(url, '_blank');
   };
 
   return (
