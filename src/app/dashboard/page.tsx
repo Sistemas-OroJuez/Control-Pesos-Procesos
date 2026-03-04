@@ -11,27 +11,24 @@ export default function Dashboard() {
   useEffect(() => {
     async function getProfile() {
       try {
-        // Obtenemos la sesión de forma silenciosa
         const { data: { session } } = await supabase.auth.getSession();
         
-        // Si no hay sesión, NO redirigimos aquí para evitar el bucle que te bota.
-        // Solo intentamos buscar el perfil si existe el usuario.
         if (session?.user) {
+          // Buscamos el rol en la tabla empleados (email ya viene en minúsculas)
           const { data: empleado } = await supabase
             .from('empleados')
             .select('rol')
-            .eq('email', session.user.email)
+            .eq('email', session.user.email.toLowerCase())
             .maybeSingle();
           
           if (empleado) {
-            setUserRole(empleado.rol.toLowerCase());
+            setUserRole(empleado.rol); 
           } else {
-            setUserRole('operador'); // Por defecto si no está en la tabla
+            setUserRole('operador'); // Si no existe en la tabla, perfil básico
           }
         }
       } catch (error) {
-        console.error("Error silencioso:", error);
-        setUserRole('operador');
+        console.error("Error cargando perfil:", error);
       } finally {
         setLoading(false);
       }
@@ -48,7 +45,7 @@ export default function Dashboard() {
     { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
   ];
 
-  // Filtro estricto: Solo admin ve adminOnly. Los demás (incluyendo null/loading) solo ven lo básico.
+  // FILTRADO: Si NO es administrador, ocultamos los botones sensibles
   const modules = allModules.filter(mod => {
     if (userRole === 'administrador') return true;
     return !mod.adminOnly;
@@ -62,26 +59,28 @@ export default function Dashboard() {
             <div className="bg-red-700 p-2 rounded-lg">
               <span className="text-white font-black italic text-xl">ORJ</span>
             </div>
-            <div>
-              <h2 className="text-xs font-black text-gray-800 uppercase leading-none">Control de Pesos</h2>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Panel Principal</p>
-            </div>
+            <h2 className="text-xs font-black text-gray-800 uppercase leading-none">
+              Control de Pesos <br/> <span className="text-gray-400">Panel Principal</span>
+            </h2>
           </div>
           
           <div className="flex items-center gap-4">
-            <div className="text-right mr-2">
-               <p className="text-[10px] font-bold text-red-700 uppercase">
-                  {loading ? 'Verificando...' : (userRole === 'administrador' ? '🛡️ Admin' : '👷 Operador')}
-               </p>
-            </div>
+            {!loading && (
+              <div className="text-right mr-2">
+                <p className="text-[10px] font-bold text-red-700 uppercase leading-none">
+                  {userRole === 'administrador' ? '🛡️ Administrador' : '👷 Operador'}
+                </p>
+                <p className="text-[7px] font-black text-gray-400 uppercase">Sincronizado</p>
+              </div>
+            )}
             <button 
               onClick={async () => {
                 await supabase.auth.signOut();
-                window.location.href = '/'; // Redirección forzada solo al salir
+                window.location.href = '/'; 
               }}
-              className="bg-gray-800 text-white px-5 py-2 rounded-lg font-bold text-xs shadow-lg"
+              className="bg-gray-800 text-white px-5 py-2 rounded-lg font-bold text-[10px] uppercase shadow-md"
             >
-              SALIR
+              Salir
             </button>
           </div>
         </div>
@@ -93,16 +92,20 @@ export default function Dashboard() {
             <button
               key={mod.id}
               onClick={() => router.push(mod.route)}
-              className={mod.color + " p-10 rounded-2xl shadow-sm border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center group"}
+              className={`${mod.color} p-10 rounded-[2.5rem] shadow-sm border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center group`}
             >
-              <span className="text-4xl mb-4 group-hover:scale-110 transition-transform">{mod.icon}</span>
-              <span className="font-bold uppercase text-[11px] tracking-widest text-center px-2">
+              <span className="text-5xl mb-4 group-hover:scale-110 transition-transform">{mod.icon}</span>
+              <span className="font-black uppercase text-xs tracking-widest text-center px-2">
                 {mod.name}
               </span>
             </button>
           ))}
         </div>
       </main>
+
+      <footer className="fixed bottom-0 w-full p-4 text-center bg-gray-100/80 backdrop-blur-sm">
+        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest italic">OroJuez S.A. - 2026</p>
+      </footer>
     </div>
   );
 }
