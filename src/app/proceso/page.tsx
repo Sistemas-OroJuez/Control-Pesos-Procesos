@@ -16,6 +16,8 @@ export default function ProcesoLlenado() {
   const [listaTurnos, setListaTurnos] = useState<any[]>([]);
   const [listaOperadores, setListaOperadores] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  
+  // Nuevo estado para controlar qué foto se está subiendo actualmente
   const [subiendoFoto, setSubiendoFoto] = useState<string | null>(null);
 
   const [datos, setDatos] = useState({
@@ -34,67 +36,34 @@ export default function ProcesoLlenado() {
     incidencia: { url: '' }
   });
 
+  // --- LÓGICA DE RECUPERACIÓN (AL CARGAR) ---
   useEffect(() => {
     setIsClient(true);
     
     async function inicializar() {
+      // Intentar recuperar borradores
       const borradorDatos = localStorage.getItem('draft_datos');
       const borradorFotos = localStorage.getItem('draft_fotos');
       const borradorBatch = localStorage.getItem('draft_batchId');
 
-      if (borradorBatch && (borradorBatch.includes('NaN') || borradorBatch === 'undefined')) {
-        localStorage.removeItem('draft_batchId');
-        window.location.reload();
-        return;
-      }
-
       if (borradorDatos) setDatos(JSON.parse(borradorDatos));
+      if (borradorBatch) setBatchId(borradorBatch);
       if (borradorFotos) setFotos(JSON.parse(borradorFotos));
 
-      if (borradorBatch) {
-        setBatchId(borradorBatch);
-      } else {
+      if (!borradorBatch) {
         const hoy = new Date();
         const d = String(hoy.getDate()).padStart(2, '0');
         const m = String(hoy.getMonth() + 1).padStart(2, '0');
         const a = String(hoy.getFullYear()).slice(-2);
         const prefix = `EXT${d}${m}${a}`;
         
-        const { data: ultimos } = await supabase
+        const { count } = await supabase
           .from('procesos_batch')
-          .select('batch_id')
-          .like('batch_id', `${prefix}%`)
-          .order('batch_id', { ascending: false })
-          .limit(1);
+          .select('*', { count: 'exact', head: true })
+          .like('batch_id', `${prefix}%`);
 
-        let siguienteSecuencia = 1;
-        if (ultimos && ultimos.length > 0) {
-          const match = ultimos[0].batch_id.match(/\d+$/);
-          if (match) siguienteSecuencia = parseInt(match[0]) + 1;
-        }
-
-        let registroExitoso = false;
-        let idFinal = "";
-
-        while (!registroExitoso) {
-          idFinal = `${prefix}${String(siguienteSecuencia).padStart(2, '0')}`;
-          const { error: insertError } = await supabase
-            .from('procesos_batch')
-            .insert([{ 
-              batch_id: idFinal,
-              fecha_hora_inicio: new Date().toISOString() 
-            }]);
-
-          if (!insertError) {
-            registroExitoso = true;
-          } else if (insertError.code === '23505') { 
-            siguienteSecuencia++;
-          } else {
-            break;
-          }
-        }
-        setBatchId(idFinal);
-        localStorage.setItem('draft_batchId', idFinal);
+        const sequence = String((count || 0) + 1).padStart(2, '0');
+        setBatchId(`${prefix}${sequence}`);
       }
 
       const [resParams, resOps] = await Promise.all([
@@ -112,28 +81,40 @@ export default function ProcesoLlenado() {
     inicializar();
   }, []);
 
+  // --- LÓGICA DE AUTO-GUARDADO DE DATOS ---
   useEffect(() => {
-    if (isClient && batchId !== 'Cargando...' && !batchId.includes('NaN')) {
+    if (isClient) {
       localStorage.setItem('draft_datos', JSON.stringify(datos));
       localStorage.setItem('draft_batchId', batchId);
       localStorage.setItem('draft_fotos', JSON.stringify(fotos));
     }
   }, [datos, fotos, batchId, isClient]);
 
+  if (!isClient) return null;
+
+  // --- FUNCIÓN DE CÁMARA CON SUBIDA INMEDIATA ---
   const abrirCamara = async (tipo: keyof typeof fotos) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
     input.capture = 'environment';
+    
     input.onchange = async (e: any) => {
       const file = e.target.files[0];
       if (file) {
-        setSubiendoFoto(tipo);
+        setSubiendoFoto(tipo); // Bloquea el botón visualmente
         try {
+          // Subir directamente al Storage apenas se toma
           const urlNube = await subirImagen(file, tipo);
-          setFotos(prev => ({ ...prev, [tipo]: { url: urlNube, hora: new Date().toISOString() } }));
+          
+          const nuevaInfoFoto = { 
+            url: urlNube, 
+            hora: new Date().toISOString() 
+          };
+
+          setFotos(prev => ({ ...prev, [tipo]: nuevaInfoFoto }));
         } catch (error) {
-          alert("Error al subir imagen");
+          alert("Error al subir la imagen a la nube. Intente nuevamente.");
         } finally {
           setSubiendoFoto(null);
         }
@@ -143,62 +124,60 @@ export default function ProcesoLlenado() {
   };
 
   const guardarBatch = async () => {
+    // Validamos que existan las URLs de la nube
+    if (!fotos.visor_cero.url || !fotos.tanque_vacio.url || !fotos.visor_lleno.url) {
+      alert("⚠️ Faltan capturas obligatorias (Visor Cero, Tanque Vacío y Visor Lleno).");
+      return;
+    }
+    
     if (!datos.operador_id || !datos.variedad || !datos.proveedor || !datos.turno || !datos.peso_final) {
-      alert("Faltan datos obligatorios.");
+      alert("⚠️ Todos los campos de selección y el peso final son obligatorios.");
       return;
     }
 
     setLoading(true);
+    try {
+      const { error } = await supabase.from('procesos_batch').insert([{
+        batch_id: batchId,
+        operador_id: datos.operador_id,
+        variedad: datos.variedad,
+        proveedor: datos.proveedor,
+        turno: datos.turno,
+        foto_visor_cero_url: fotos.visor_cero.url,
+        hora_foto_visor_cero: fotos.visor_cero.hora,
+        foto_tanque_vacio_url: fotos.tanque_vacio.url,
+        hora_foto_tanque_vacio: fotos.tanque_vacio.hora,
+        foto_visor_lleno_url: fotos.visor_lleno.url,
+        hora_foto_visor_lleno: fotos.visor_lleno.hora,
+        foto_justificacion_url: fotos.incidencia.url || null,
+        peso_final_digitado: parseFloat(datos.peso_final),
+        observaciones: datos.observaciones,
+        fecha_hora_inicio: fotos.visor_cero.hora,
+        fecha_hora_fin: new Date().toISOString()
+      }]);
 
-    const getFmtFecha = (iso?: string | null) => {
-      const d = iso ? new Date(iso) : new Date();
-      const pad = (n: number) => n < 10 ? '0' + n : n;
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    };
+      if (error) throw error;
+      
+      // Limpiar borradores al finalizar con éxito
+      localStorage.removeItem('draft_datos');
+      localStorage.removeItem('draft_fotos');
+      localStorage.removeItem('draft_batchId');
 
-    // EL PAYLOAD: Aquí mandamos todo para que deje de estar NULL
-    const payload = {
-      operador_id: datos.operador_id,
-      variedad: datos.variedad,
-      proveedor: datos.proveedor,
-      turno: datos.turno,
-      peso_final_digitado: parseFloat(datos.peso_final),
-      observaciones: datos.observaciones,
-      fecha_hora_inicio: getFmtFecha(fotos.visor_cero.hora),
-      fecha_hora_fin: getFmtFecha(),
-      foto_visor_cero_url: fotos.visor_cero.url,
-      foto_tanque_vacio_url: fotos.tanque_vacio.url,
-      foto_visor_lleno_url: fotos.visor_lleno.url,
-      foto_justificacion_url: fotos.incidencia.url,
-      hora_foto_visor_cero: getFmtFecha(fotos.visor_cero.hora),
-      hora_foto_tanque_vacio: getFmtFecha(fotos.tanque_vacio.hora),
-      hora_foto_visor_lleno: getFmtFecha()
-    };
-
-    // USAMOS UPDATE para llenar la fila que reservamos al inicio
-    const { error } = await supabase
-      .from('procesos_batch')
-      .update(payload)
-      .eq('batch_id', batchId);
-
-    if (error) {
-      alert("Error: " + error.message);
-    } else {
-      alert("✅ GUARDADO EXITOSO");
-      localStorage.clear();
-      window.location.reload();
+      alert("✅ Registro guardado con éxito.");
+      router.push('/dashboard');
+    } catch (err: any) {
+      alert("❌ Error al guardar registro: " + err.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
-
-  if (!isClient) return null;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-28">
-      <header className="bg-red-700 p-4 text-white sticky top-0 z-10 flex justify-between items-center shadow-lg">
-        <button onClick={() => router.back()}>←</button>
+      <header className="bg-red-700 p-4 text-white sticky top-0 z-10 shadow-lg flex justify-between items-center">
+        <button onClick={() => router.back()} className="text-xl">←</button>
         <div className="text-center">
-          <h1 className="font-black text-xs uppercase tracking-widest">Pesado de Batch</h1>
+          <h1 className="font-black text-xs tracking-widest uppercase">Proceso de Pesado</h1>
           <p className="text-[10px] font-bold opacity-70">{batchId}</p>
         </div>
         <div className="w-6"></div>
@@ -206,82 +185,134 @@ export default function ProcesoLlenado() {
 
       <div className="p-5 space-y-5">
         <section className="bg-white p-5 rounded-3xl border shadow-sm space-y-4">
-          <select 
-            className="w-full p-4 rounded-2xl border-2 border-gray-100 font-bold bg-gray-50 outline-none focus:border-red-700"
-            value={datos.operador_id}
-            onChange={e => setDatos({...datos, operador_id: e.target.value})}
-          >
-            <option value="">OPERADOR...</option>
-            {listaOperadores.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
-          </select>
+          <div>
+            <label className="text-[10px] font-black text-red-700 uppercase ml-1">1. Seleccione Operador</label>
+            <select 
+              className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
+              value={datos.operador_id}
+              onChange={e => setDatos({...datos, operador_id: e.target.value})}
+            >
+              <option value="">ELIJA UN NOMBRE...</option>
+              {listaOperadores.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+            </select>
+          </div>
 
-          <select 
-            className="w-full p-4 rounded-2xl border-2 border-gray-100 font-bold bg-gray-50"
-            value={datos.variedad}
-            onChange={e => setDatos({...datos, variedad: e.target.value})}
-          >
-            <option value="">VARIEDAD...</option>
-            {listaVariedades.map(v => <option key={v.id} value={v.valor}>{v.valor}</option>)}
-          </select>
-
-          <select 
-            className="w-full p-4 rounded-2xl border-2 border-gray-100 font-bold bg-gray-50"
-            value={datos.proveedor}
-            onChange={e => setDatos({...datos, proveedor: e.target.value})}
-          >
-            <option value="">PROVEEDOR...</option>
-            {listaProveedores.map(p => <option key={p.id} value={p.valor}>{p.valor}</option>)}
-          </select>
-
-          <select 
-            className="w-full p-4 rounded-2xl border-2 border-gray-100 font-bold bg-gray-50"
-            value={datos.turno}
-            onChange={e => setDatos({...datos, turno: e.target.value})}
-          >
-            <option value="">TURNO...</option>
-            {listaTurnos.map(t => <option key={t.id} value={t.valor}>{t.valor}</option>)}
-          </select>
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <label className="text-[10px] font-black text-red-700 uppercase ml-1">2. Variedad de Palma</label>
+              <select 
+                className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
+                value={datos.variedad}
+                onChange={e => setDatos({...datos, variedad: e.target.value})}
+              >
+                <option value="">SELECCIONE...</option>
+                {listaVariedades.map(v => <option key={v.id} value={v.valor}>{v.valor}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-red-700 uppercase ml-1">3. Proveedor MP</label>
+              <select 
+                className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
+                value={datos.proveedor}
+                onChange={e => setDatos({...datos, proveedor: e.target.value})}
+              >
+                <option value="">SELECCIONE...</option>
+                {listaProveedores.map(p => <option key={p.id} value={p.valor}>{p.valor}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-red-700 uppercase ml-1">4. Turno de Trabajo</label>
+              <select 
+                className="w-full p-4 mt-1 rounded-2xl border-2 border-gray-100 font-bold text-sm bg-gray-50 outline-none focus:border-red-700"
+                value={datos.turno}
+                onChange={e => setDatos({...datos, turno: e.target.value})}
+              >
+                <option value="">SELECCIONE TURNO...</option>
+                {listaTurnos.map(t => <option key={t.id} value={t.valor}>{t.valor}</option>)}
+              </select>
+            </div>
+          </div>
         </section>
 
+        {/* FOTOS DE INICIO CON CARGA INDIVIDUAL */}
         <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => abrirCamara('visor_cero')} className={`aspect-square rounded-3xl border-2 border-dashed flex items-center justify-center overflow-hidden ${fotos.visor_cero.url ? 'border-green-500' : 'border-gray-200 bg-white text-gray-400'}`}>
-            {subiendoFoto === 'visor_cero' ? '...' : fotos.visor_cero.url ? <img src={fotos.visor_cero.url} className="w-full h-full object-cover" /> : '⚖️ Visor Cero'}
+          <button 
+            type="button"
+            disabled={!!subiendoFoto}
+            onClick={() => abrirCamara('visor_cero')} 
+            className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.visor_cero.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
+          >
+            {subiendoFoto === 'visor_cero' ? <span className="text-[10px] animate-pulse">SUBIENDO...</span> : 
+             fotos.visor_cero.url ? <img src={fotos.visor_cero.url} className="w-full h-full object-cover rounded-2xl" /> : <>
+              <span className="text-3xl mb-1">⚖️</span>
+              <span className="text-[9px] font-black uppercase">Visor en Cero</span>
+            </>}
           </button>
-          <button onClick={() => abrirCamara('tanque_vacio')} className={`aspect-square rounded-3xl border-2 border-dashed flex items-center justify-center overflow-hidden ${fotos.tanque_vacio.url ? 'border-green-500' : 'border-gray-200 bg-white text-gray-400'}`}>
-            {subiendoFoto === 'tanque_vacio' ? '...' : fotos.tanque_vacio.url ? <img src={fotos.tanque_vacio.url} className="w-full h-full object-cover" /> : '🛢️ Tanque Vacío'}
+
+          <button 
+            type="button"
+            disabled={!!subiendoFoto}
+            onClick={() => abrirCamara('tanque_vacio')} 
+            className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.tanque_vacio.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
+          >
+            {subiendoFoto === 'tanque_vacio' ? <span className="text-[10px] animate-pulse">SUBIENDO...</span> :
+             fotos.tanque_vacio.url ? <img src={fotos.tanque_vacio.url} className="w-full h-full object-cover rounded-2xl" /> : <>
+              <span className="text-3xl mb-1">🛢️</span>
+              <span className="text-[9px] font-black uppercase">Tanque Vacío</span>
+            </>}
           </button>
         </div>
 
-        <section className="bg-red-50 p-5 rounded-3xl border border-red-100 flex gap-3">
-          <button onClick={() => abrirCamara('visor_lleno')} className="w-1/3 aspect-square bg-white border-2 border-dashed rounded-2xl flex items-center justify-center overflow-hidden">
-            {fotos.visor_lleno.url ? <img src={fotos.visor_lleno.url} className="w-full h-full object-cover" /> : '📸'}
-          </button>
-          <input 
-            type="number" placeholder="PESO" 
-            className="w-2/3 p-4 rounded-2xl text-3xl font-black text-center text-red-700 outline-none"
-            value={datos.peso_final}
-            onChange={e => setDatos({...datos, peso_final: e.target.value})}
-          />
+        {/* PESO Y FOTO FINAL */}
+        <section className="bg-red-50 p-5 rounded-3xl border border-red-100 space-y-3">
+          <label className="text-[10px] font-black text-red-700 uppercase ml-1">5. Cierre de Batch</label>
+          <div className="flex gap-3">
+            <button 
+              type="button"
+              disabled={!!subiendoFoto}
+              onClick={() => abrirCamara('visor_lleno')} 
+              className={`w-1/3 aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center ${fotos.visor_lleno.url ? 'border-red-500 bg-white' : 'border-red-200 text-red-300'}`}
+            >
+              {subiendoFoto === 'visor_lleno' ? <span className="text-[10px] animate-pulse">...</span> :
+               fotos.visor_lleno.url ? <img src={fotos.visor_lleno.url} className="w-full h-full object-cover rounded-xl" /> : <span className="text-2xl">📸</span>}
+            </button>
+            <input 
+              type="number" 
+              placeholder="PESO FINAL"
+              value={datos.peso_final}
+              className="w-2/3 p-4 rounded-2xl border-2 border-red-100 text-3xl font-black text-red-700 outline-none placeholder:text-red-200 text-center"
+              onChange={e => setDatos({...datos, peso_final: e.target.value})}
+            />
+          </div>
         </section>
 
-        <textarea 
-          placeholder="Observaciones..." 
-          className="w-full p-4 border-2 rounded-3xl h-20 outline-none"
-          value={datos.observaciones}
-          onChange={e=>setDatos({...datos, observaciones: e.target.value})}
-        ></textarea>
-        
-        <button onClick={() => abrirCamara('incidencia')} className={`w-full p-4 rounded-2xl border-2 border-dashed text-[10px] font-black ${fotos.incidencia.url ? 'bg-amber-100 border-amber-500 text-amber-700' : 'bg-white text-amber-400'}`}>
-          {fotos.incidencia.url ? '✓ EVIDENCIA LISTA' : '+ FOTO JUSTIFICACIÓN'}
-        </button>
+        <div className="space-y-3">
+          <textarea 
+            placeholder="Observaciones..." 
+            value={datos.observaciones}
+            className="w-full p-4 border-2 rounded-3xl bg-white h-20 text-sm font-semibold outline-none focus:border-red-700"
+            onChange={e=>setDatos({...datos, observaciones: e.target.value})}
+          ></textarea>
+          
+          <button 
+            type="button"
+            disabled={!!subiendoFoto}
+            onClick={() => abrirCamara('incidencia')} 
+            className={`w-full p-4 rounded-2xl border-2 border-dashed text-[10px] font-black transition-all ${fotos.incidencia.url ? 'bg-amber-100 border-amber-500 text-amber-700' : 'border-amber-200 text-amber-400 bg-white'}`}
+          >
+            {subiendoFoto === 'incidencia' ? 'CARGANDO...' : 
+             fotos.incidencia.url ? '✓ EVIDENCIA DE NOVEDAD LISTA' : '+ FOTO JUSTIFICACIÓN / NOVEDAD'}
+          </button>
+        </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t">
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-gray-100">
         <button 
-          onClick={guardarBatch} disabled={loading || !!subiendoFoto}
-          className="w-full bg-red-700 text-white py-5 rounded-2xl font-black tracking-widest shadow-xl disabled:bg-gray-400"
+          onClick={guardarBatch} 
+          disabled={loading || !!subiendoFoto} 
+          className="w-full bg-red-700 text-white py-5 rounded-2xl font-black text-sm tracking-[4px] shadow-2xl active:scale-95 transition-all disabled:bg-gray-400"
         >
-          {loading ? 'GUARDANDO...' : 'GUARDAR PESADA'}
+          {loading ? 'SINCRONIZANDO...' : 'GUARDAR PESADA'}
         </button>
       </div>
     </div>
