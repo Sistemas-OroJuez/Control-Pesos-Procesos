@@ -170,7 +170,7 @@ const guardarBatch = async () => {
     } else {
       alert("✅ BATCH GUARDADO CON ÉXITO");
       
-      // Limpiar estados y localStorage inmediatamente antes de recargar
+      // Limpiar estados y localStorage
       localStorage.removeItem('draft_datos');
       localStorage.removeItem('draft_fotos');
       localStorage.removeItem('draft_batchId');
@@ -191,8 +191,8 @@ const guardarBatch = async () => {
         incidencia: { url: '' }
       });
 
-      // Refrescar para generar nuevo ID de batch basado en el nuevo conteo de la DB
-      window.location.href = window.location.pathname;
+      // Refrescar para generar nuevo ID de batch y limpiar todo
+      window.location.reload();
     }
     setLoading(false);
   };
