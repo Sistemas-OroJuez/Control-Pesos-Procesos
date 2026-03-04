@@ -10,14 +10,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function getProfile() {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          router.push('/');
-          return;
-        }
-
-        // Buscamos el rol real en la tabla empleados
+      // 1. Obtenemos el usuario de la sesión
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        // 2. Buscamos el rol en la tabla empleados
         const { data: empleado } = await supabase
           .from('empleados')
           .select('rol')
@@ -27,16 +24,15 @@ export default function Dashboard() {
         if (empleado) {
           setUserRole(empleado.rol.toLowerCase());
         }
-      } catch (error) {
-        console.error("Error verificando rol:", error);
-      } finally {
-        setLoading(false);
       }
+      // 3. Importante: Terminamos de cargar aunque no haya empleado
+      // para que no se quede pegado o te bote
+      setLoading(false);
     }
     getProfile();
-  }, [router]);
+  }, []);
 
-  // Lista de TODOS los módulos disponibles
+  // Definición de módulos
   const allModules = [
     { id: 3, name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', adminOnly: false },
     { id: 4, name: 'Reportes Generales', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes', adminOnly: false },
@@ -46,20 +42,13 @@ export default function Dashboard() {
     { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
   ];
 
-  // FILTRADO DINÁMICO: 
-  // Si es 'operador', filtramos y dejamos solo los que NO son adminOnly.
+  // FILTRADO DINÁMICO: Si el rol es 'operador', quitamos los módulos prohibidos
   const modules = allModules.filter(mod => {
-    if (userRole === 'operador') return !mod.adminOnly;
-    return true; // Administrador ve todo
+    if (userRole === 'operador') {
+      return !mod.adminOnly;
+    }
+    return true; // Si es admin o el rol no ha cargado, se mantienen (o puedes invertirlos)
   });
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <p className="font-black text-gray-400 animate-pulse uppercase tracking-tighter">Sincronizando Perfil...</p>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -77,12 +66,12 @@ export default function Dashboard() {
           </div>
           
           <div className="flex items-center gap-4">
-            <div className="text-right mr-2">
-              <p className="text-[8px] font-black text-gray-400 uppercase leading-none">Acceso</p>
-              <p className="text-[10px] font-bold text-red-700 uppercase">
-                {userRole === 'administrador' ? '🛡️ Admin' : '👷 Operador'}
-              </p>
-            </div>
+            {/* Indicador de perfil para depuración rápida */}
+            {!loading && (
+              <span className="text-[10px] font-black text-red-700 uppercase">
+                Perfil: {userRole || 'Verificando...'}
+              </span>
+            )}
             <button 
               onClick={async () => {
                 await supabase.auth.signOut();
@@ -96,24 +85,30 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* CUADRÍCULA DE MÓDULOS FILTRADA */}
+      {/* CUADRÍCULA DE MÓDULOS */}
       <main className="max-w-6xl mx-auto p-6 md:p-12">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6 max-w-4xl mx-auto">
-          {modules.map((mod) => (
-            <button
-              key={mod.id}
-              onClick={() => router.push(mod.route)}
-              className={mod.color + " p-10 rounded-2xl shadow-sm border border-gray-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center group"}
-            >
-              <span className="text-4xl mb-4 group-hover:scale-110 transition-transform">
-                {mod.icon}
-              </span>
-              <span className="font-bold uppercase text-[11px] tracking-widest text-center px-2 leading-tight">
-                {mod.name}
-              </span>
-            </button>
-          ))}
-        </div>
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <p className="font-black text-gray-400 animate-pulse">CARGANDO MÓDULOS...</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6 max-w-4xl mx-auto">
+            {modules.map((mod) => (
+              <button
+                key={mod.id}
+                onClick={() => router.push(mod.route)}
+                className={mod.color + " p-10 rounded-2xl shadow-sm border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center group"}
+              >
+                <span className="text-4xl mb-4 group-hover:scale-110 transition-transform">
+                  {mod.icon}
+                </span>
+                <span className="font-black uppercase text-[11px] tracking-widest text-center px-2 leading-tight">
+                  {mod.name}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </main>
 
       <footer className="fixed bottom-0 w-full p-4 text-center bg-gray-100/80 backdrop-blur-sm">
