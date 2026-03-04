@@ -12,7 +12,7 @@ export default function ReporteGeneralCompleto() {
   const [listas, setListas] = useState({
     localidades: [],
     operadores: [],
-    variedades: ['GUINENSIS', 'HIBRIDO', 'OTRA'],
+    variedades: ['GUINENSIS', 'HIBRIDO', 'OTRA'], // Basado en tu SQL
     proveedores: []
   });
 
@@ -31,12 +31,10 @@ export default function ReporteGeneralCompleto() {
     consultar();
   }, []);
 
-  // CÁLCULO DE SUBTOTALES
-  const totalPeso = datos.reduce((acc, reg) => acc + (Number(reg.peso_final_digitado) || 0), 0);
-
   async function cargarCatalogos() {
     const { data: loc } = await supabase.from('localidades').select('*').order('nombre');
     const { data: ope } = await supabase.from('operadores').select('*').order('nombre');
+    // Sacar proveedores únicos de la tabla para no hardcodear
     const { data: prov } = await supabase.from('procesos_batch').select('proveedor');
     const proveedoresUnicos = Array.from(new Set(prov?.map(p => p.proveedor).filter(Boolean)));
 
@@ -62,6 +60,7 @@ export default function ReporteGeneralCompleto() {
       .gte('created_at', `${filtros.desde}T00:00:00`)
       .lte('created_at', `${filtros.hasta}T23:59:59`);
 
+    // Aplicar filtros lógicos
     if (filtros.localidadId) query = query.eq('operadores.sitios.localidad_id', filtros.localidadId);
     if (filtros.operadorId) query = query.eq('operador_id', filtros.operadorId);
     if (filtros.variedad) query = query.eq('variedad', filtros.variedad);
@@ -117,7 +116,7 @@ export default function ReporteGeneralCompleto() {
             </div>
 
             <button onClick={consultar} className="bg-red-700 text-white rounded-xl font-black text-[10px] uppercase h-[38px] self-end hover:bg-red-800 transition-all shadow-md">
-              {loading ? 'Consultando...' : 'Aplicar Filtros'}
+              Aplicar Filtros
             </button>
           </div>
         </div>
@@ -160,7 +159,7 @@ export default function ReporteGeneralCompleto() {
                       </div>
                     </td>
                     <td className="p-4 text-right font-black text-red-700 text-base border-l">
-                      {reg.peso_final_digitado.toLocaleString()}
+                      {reg.peso_final_digitado}
                     </td>
                     <td className="p-4">
                       <p className="italic text-gray-500 line-clamp-2 mb-1">{reg.observaciones || '-'}</p>
@@ -171,19 +170,6 @@ export default function ReporteGeneralCompleto() {
                   </tr>
                 ))}
               </tbody>
-
-              {/* FILA DE SUBTOTALES */}
-              <tfoot className="bg-slate-100 border-t-2 border-slate-900">
-                <tr className="font-black">
-                  <td colSpan={4} className="p-4 text-right text-slate-900 uppercase tracking-widest text-xs">
-                    Subtotal del Periodo:
-                  </td>
-                  <td className="p-4 text-right text-red-700 text-xl border-l border-slate-300">
-                    {totalPeso.toLocaleString()} <span className="text-[10px]">KG</span>
-                  </td>
-                  <td className="p-4 bg-slate-100"></td>
-                </tr>
-              </tfoot>
             </table>
           </div>
           {datos.length === 0 && <div className="p-20 text-center font-black text-gray-300 uppercase tracking-widest bg-gray-50">No hay registros con estos filtros</div>}
