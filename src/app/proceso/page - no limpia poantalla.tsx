@@ -131,15 +131,21 @@ const guardarBatch = async () => {
 
     setLoading(true);
 
-    const getEcuadorFechaManual = (fechaISO?: string | null) => {
+    // FUNCIÓN DEFINITIVA PARA ECUADOR (Sin conversiones de Huso Horario)
+const getEcuadorFechaManual = (fechaISO?: string | null) => {
+      // Usamos la fecha del dispositivo tal cual, sin restarle nada
       const d = fechaISO ? new Date(fechaISO) : new Date();
+      
       const pad = (n: number) => n < 10 ? '0' + n : n;
+      
+      // Construimos el string: YYYY-MM-DD HH:mm:ss
       const year = d.getFullYear();
       const month = pad(d.getMonth() + 1);
       const day = pad(d.getDate());
       const hours = pad(d.getHours());
       const minutes = pad(d.getMinutes());
       const seconds = pad(d.getSeconds());
+
       return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
     };
 
@@ -151,12 +157,16 @@ const guardarBatch = async () => {
       turno: datos.turno,
       peso_final_digitado: datos.peso_final,
       observaciones: datos.observaciones,
+      
+      // Enviamos como texto "2026-03-04 14:31:30"
       fecha_hora_inicio: getEcuadorFechaManual(fotos.visor_cero.hora),
       fecha_hora_fin: getEcuadorFechaManual(),
+      
       foto_visor_cero_url: fotos.visor_cero.url,
       foto_tanque_vacio_url: fotos.tanque_vacio.url,
       foto_visor_lleno_url: fotos.visor_lleno.url,
       foto_justificacion_url: fotos.incidencia.url,
+      
       hora_foto_visor_cero: getEcuadorFechaManual(fotos.visor_cero.hora),
       hora_foto_tanque_vacio: getEcuadorFechaManual(fotos.tanque_vacio.hora),
       hora_foto_visor_lleno: getEcuadorFechaManual()
@@ -169,30 +179,7 @@ const guardarBatch = async () => {
       alert("Error al guardar: " + error.message);
     } else {
       alert("✅ BATCH GUARDADO CON ÉXITO");
-      
-      // Limpiar estados y localStorage
-      localStorage.removeItem('draft_datos');
-      localStorage.removeItem('draft_fotos');
-      localStorage.removeItem('draft_batchId');
-      
-      setDatos({
-        operador_id: '',
-        variedad: '',
-        proveedor: '',
-        turno: '',
-        peso_final: '',
-        observaciones: ''
-      });
-
-      setFotos({
-        visor_cero: { url: '', hora: null },
-        tanque_vacio: { url: '', hora: null },
-        visor_lleno: { url: '', hora: null },
-        incidencia: { url: '' }
-      });
-
-      // Refrescar para generar nuevo ID de batch y limpiar todo
-      window.location.reload();
+      router.push('/dashboard');
     }
     setLoading(false);
   };
