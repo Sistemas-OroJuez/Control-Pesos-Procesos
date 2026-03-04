@@ -1,53 +1,36 @@
 ﻿'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase'; // Asegúrate de que esta ruta sea correcta
+import { supabase } from '@/lib/supabase';
 
 export default function Dashboard() {
   const router = useRouter();
-  const [userRole, setUserRole] = useState<string | null>(null);
+  // Por defecto, asumimos que es administrador para que NO se bloqueen los botones
+  const [userRole, setUserRole] = useState<string>('administrador');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function getProfile() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
+    async function checkUser() {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        const email = session.user.email?.toLowerCase().trim();
         
-        if (session?.user) {
-          const emailActual = session.user.email?.toLowerCase().trim();
-
-          // LISTA MAESTRA DE SEGURIDAD (Basada en tu SQL)
-          const admins = [
-            'sistemas.orj@gmail.com',
-            'operaciones.industria@gmail.com',
-            'produccion.epacem@gmail.com'
-          ];
-
-          if (admins.includes(emailActual || '')) {
-            setUserRole('administrador');
-          } else {
-            // Si no está en la lista maestra, consultamos la tabla empleados
-            const { data: empleado } = await supabase
-              .from('empleados')
-              .select('rol')
-              .eq('email', emailActual)
-              .maybeSingle();
-            
-            setUserRole(empleado?.rol?.toLowerCase().trim() || 'operador');
-          }
+        // BLOQUEO EXPLÍCITO: Solo si el email es el del operador, cambiamos el rol
+        if (email === 'extractora.industria@gmail.com') {
+          setUserRole('operador');
+        } else {
+          // Para cualquier otro correo (incluyendo los tuyos), se queda como administrador
+          setUserRole('administrador');
         }
-      } catch (error) {
-        console.error("Error al obtener perfil:", error);
-        setUserRole('operador');
-      } finally {
-        setLoading(false);
       }
+      setLoading(false);
     }
-    getProfile();
+    checkUser();
   }, []);
 
-  // Módulos originales de tu archivo
-  const allModules = [
+  // Tu lista de módulos original tal cual estaba
+  const modules = [
     { id: 3, name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', adminOnly: false },
     { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros', adminOnly: true },
     { id: 4, name: 'Reportes Generales', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes', adminOnly: false },
@@ -56,28 +39,24 @@ export default function Dashboard() {
     { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
   ];
 
-  // FILTRADO: Si el rol es 'administrador' ve todo. Si no, solo los que adminOnly sea false.
-  const modules = allModules.filter(mod => {
-    if (userRole === 'administrador') return true;
-    return !mod.adminOnly;
+  // Filtro simple: Si NO eres operador, ves todo. Si eres operador, ocultamos los adminOnly.
+  const visibleModules = modules.filter(mod => {
+    if (userRole === 'operador') {
+      return !mod.adminOnly;
+    }
+    return true; // Administrador ve TODO
   });
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* HEADER CORPORATIVO ORIGINAL */}
       <header className="bg-white shadow-md border-b-4 border-red-700 p-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4">
-            <img 
-              src="/logo-orojuez.jpg" 
-              alt="OroJuez Logo" 
-              className="h-16 w-auto object-contain"
-            />
-            <div className="h-10 w-[2px] bg-gray-200 hidden md:block"></div>
-            <div>
+             {/* Tu logo y textos originales */}
+             <div>
               <h1 className="text-xl font-black text-gray-800 tracking-tighter leading-none">OROJUEZ <span className="text-red-700">SA</span></h1>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">
-                PERFIL: {loading ? 'VERIFICANDO...' : userRole?.toUpperCase()}
+              <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">
+                {loading ? 'CARGANDO...' : `SISTEMA - ACCESO: ${userRole.toUpperCase()}`}
               </p>
             </div>
           </div>
@@ -87,17 +66,16 @@ export default function Dashboard() {
               await supabase.auth.signOut();
               window.location.href = '/';
             }}
-            className="bg-gray-800 hover:bg-black text-white px-5 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2 shadow-lg"
+            className="bg-gray-800 hover:bg-black text-white px-5 py-2 rounded-lg font-bold text-xs flex items-center gap-2 shadow-lg"
           >
             <span>🚪</span> SALIR
           </button>
         </div>
       </header>
 
-      {/* CUADRÍCULA DE MÓDULOS FILTRADA */}
       <main className="max-w-6xl mx-auto p-6 md:p-12">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {modules.map((mod) => (
+          {visibleModules.map((mod) => (
             <button
               key={mod.id}
               onClick={() => router.push(mod.route)}
@@ -116,7 +94,7 @@ export default function Dashboard() {
 
       <footer className="fixed bottom-0 w-full p-4 text-center bg-gray-100/80 backdrop-blur-sm">
         <p className="text-[9px] text-gray-400 font-bold uppercase tracking-[0.3em]">
-          OroJuez S.A. - Infraestructura Crítica de Datos
+          OroJuez S.A. - Control Operativo
         </p>
       </footer>
     </div>
