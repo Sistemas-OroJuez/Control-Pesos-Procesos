@@ -17,7 +17,6 @@ export default function ProcesoLlenado() {
   const [listaOperadores, setListaOperadores] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   
-  // Nuevo estado para controlar qué foto se está subiendo actualmente
   const [subiendoFoto, setSubiendoFoto] = useState<string | null>(null);
 
   const [datos, setDatos] = useState({
@@ -36,36 +35,28 @@ export default function ProcesoLlenado() {
     incidencia: { url: '' }
   });
 
-  // --- LÓGICA DE RECUPERACIÓN (AL CARGAR) ---
+  // Función auxiliar para obtener fecha/hora actual en Zona Ecuador
+  const getEcuadorDate = () => {
+    return new Date(new Date().toLocaleString("en-US", { timeZone: "America/Guayaquil" }));
+  };
+
   useEffect(() => {
     setIsClient(true);
     
     async function inicializar() {
-      // Intentar recuperar borradores
-      const borradorDatos = localStorage.getItem('draft_datos');
-      const borradorFotos = localStorage.getItem('draft_fotos');
-      const borradorBatch = localStorage.getItem('draft_batchId');
+      // 1. Generación de Batch ID: DDMMAAAHHMMSS
+      const ahora = getEcuadorDate();
+      const dd = String(ahora.getDate()).padStart(2, '0');
+      const mm = String(ahora.getMonth() + 1).padStart(2, '0');
+      const aaaa = ahora.getFullYear();
+      const hh = String(ahora.getHours()).padStart(2, '0');
+      const min = String(ahora.getMinutes()).padStart(2, '0');
+      const ss = String(ahora.getSeconds()).padStart(2, '0');
+      
+      const nuevoBatchId = `${dd}${mm}${aaaa}${hh}${min}${ss}`;
+      setBatchId(nuevoBatchId);
 
-      if (borradorDatos) setDatos(JSON.parse(borradorDatos));
-      if (borradorBatch) setBatchId(borradorBatch);
-      if (borradorFotos) setFotos(JSON.parse(borradorFotos));
-
-      if (!borradorBatch) {
-        const hoy = new Date();
-        const d = String(hoy.getDate()).padStart(2, '0');
-        const m = String(hoy.getMonth() + 1).padStart(2, '0');
-        const a = String(hoy.getFullYear()).slice(-2);
-        const prefix = `EXT${d}${m}${a}`;
-        
-        const { count } = await supabase
-          .from('procesos_batch')
-          .select('*', { count: 'exact', head: true })
-          .like('batch_id', `${prefix}%`);
-
-        const sequence = String((count || 0) + 1).padStart(2, '0');
-        setBatchId(`${prefix}${sequence}`);
-      }
-
+      // 2. Cargar parámetros (Igual a tu archivo OK)
       const [resParams, resOps] = await Promise.all([
         supabase.from('parametros').select('*').eq('activo', true),
         supabase.from('operadores').select('*').eq('activo', true).order('nombre')
@@ -81,18 +72,8 @@ export default function ProcesoLlenado() {
     inicializar();
   }, []);
 
-  // --- LÓGICA DE AUTO-GUARDADO DE DATOS ---
-  useEffect(() => {
-    if (isClient) {
-      localStorage.setItem('draft_datos', JSON.stringify(datos));
-      localStorage.setItem('draft_batchId', batchId);
-      localStorage.setItem('draft_fotos', JSON.stringify(fotos));
-    }
-  }, [datos, fotos, batchId, isClient]);
-
   if (!isClient) return null;
 
-  // --- FUNCIÓN DE CÁMARA CON SUBIDA INMEDIATA ---
   const abrirCamara = async (tipo: keyof typeof fotos) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -102,19 +83,14 @@ export default function ProcesoLlenado() {
     input.onchange = async (e: any) => {
       const file = e.target.files[0];
       if (file) {
-        setSubiendoFoto(tipo); // Bloquea el botón visualmente
+        setSubiendoFoto(tipo);
         try {
-          // Subir directamente al Storage apenas se toma
           const urlNube = await subirImagen(file, tipo);
-          
-          const nuevaInfoFoto = { 
-            url: urlNube, 
-            hora: new Date().toISOString() 
-          };
-
+          // Guardamos la hora de captura en formato ISO de Ecuador
+          const nuevaInfoFoto = { url: urlNube, hora: getEcuadorDate().toISOString() };
           setFotos(prev => ({ ...prev, [tipo]: nuevaInfoFoto }));
         } catch (error) {
-          alert("Error al subir la imagen a la nube. Intente nuevamente.");
+          alert("Error al subir la imagen.");
         } finally {
           setSubiendoFoto(null);
         }
@@ -123,30 +99,20 @@ export default function ProcesoLlenado() {
     input.click();
   };
 
-const guardarBatch = async () => {
-    if (!datos.operador_id || !datos.variedad || !datos.proveedor || !datos.turno || !datos.peso_final) {
+  const guardarBatch = async () => {
+    if (!datos.operador_id || !datos.variedad || !datos.proveedor || !datos.turno || !datos.peso_final || !fotos.visor_cero.url || !fotos.tanque_vacio.url || !fotos.visor_lleno.url) {
       alert("Por favor complete todos los campos y tome las fotos requeridas");
       return;
     }
 
     setLoading(true);
 
-    // FUNCIÓN DEFINITIVA PARA ECUADOR (Sin conversiones de Huso Horario)
-const getEcuadorFechaManual = (fechaISO?: string | null) => {
-      // Usamos la fecha del dispositivo tal cual, sin restarle nada
-      const d = fechaISO ? new Date(fechaISO) : new Date();
-      
+    // Formateador para que Supabase reciba YYYY-MM-DD HH:MM:SS en hora Ecuador
+    const formatEcuadorSQL = (fechaISO: string | null) => {
+      if (!fechaISO) return null;
+      const d = new Date(fechaISO);
       const pad = (n: number) => n < 10 ? '0' + n : n;
-      
-      // Construimos el string: YYYY-MM-DD HH:mm:ss
-      const year = d.getFullYear();
-      const month = pad(d.getMonth() + 1);
-      const day = pad(d.getDate());
-      const hours = pad(d.getHours());
-      const minutes = pad(d.getMinutes());
-      const seconds = pad(d.getSeconds());
-
-      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     };
 
     const payload = {
@@ -155,31 +121,29 @@ const getEcuadorFechaManual = (fechaISO?: string | null) => {
       variedad: datos.variedad,
       proveedor: datos.proveedor,
       turno: datos.turno,
-      peso_final_digitado: datos.peso_final,
+      peso_final_digitado: parseFloat(datos.peso_final),
       observaciones: datos.observaciones,
-      
-      // Enviamos como texto "2026-03-04 14:31:30"
-      fecha_hora_inicio: getEcuadorFechaManual(fotos.visor_cero.hora),
-      fecha_hora_fin: getEcuadorFechaManual(),
-      
       foto_visor_cero_url: fotos.visor_cero.url,
       foto_tanque_vacio_url: fotos.tanque_vacio.url,
       foto_visor_lleno_url: fotos.visor_lleno.url,
       foto_justificacion_url: fotos.incidencia.url,
-      
-      hora_foto_visor_cero: getEcuadorFechaManual(fotos.visor_cero.hora),
-      hora_foto_tanque_vacio: getEcuadorFechaManual(fotos.tanque_vacio.hora),
-      hora_foto_visor_lleno: getEcuadorFechaManual()
+      fecha_hora_inicio: formatEcuadorSQL(fotos.visor_cero.hora),
+      fecha_hora_fin: formatEcuadorSQL(getEcuadorDate().toISOString()),
+      hora_foto_visor_cero: formatEcuadorSQL(fotos.visor_cero.hora),
+      hora_foto_tanque_vacio: formatEcuadorSQL(fotos.tanque_vacio.hora),
+      hora_foto_visor_lleno: formatEcuadorSQL(getEcuadorDate().toISOString())
     };
 
-    const { error } = await supabase.from('procesos_batch').insert([payload]);
+    // INSERT DIRECTO (Como en tu archivo que sí funcionaba)
+    const { error } = await supabase
+      .from('procesos_batch')
+      .insert([payload]);
 
     if (error) {
-      console.error(error);
       alert("Error al guardar: " + error.message);
     } else {
-      alert("✅ BATCH GUARDADO CON ÉXITO");
-      router.push('/dashboard');
+      alert("✅ PROCESO " + batchId + " GUARDADO EXITOSAMENTE");
+      window.location.reload();
     }
     setLoading(false);
   };
@@ -246,7 +210,6 @@ const getEcuadorFechaManual = (fechaISO?: string | null) => {
           </div>
         </section>
 
-        {/* FOTOS DE INICIO CON CARGA INDIVIDUAL */}
         <div className="grid grid-cols-2 gap-3">
           <button 
             type="button"
@@ -254,7 +217,7 @@ const getEcuadorFechaManual = (fechaISO?: string | null) => {
             onClick={() => abrirCamara('visor_cero')} 
             className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.visor_cero.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
           >
-            {subiendoFoto === 'visor_cero' ? <span className="text-[10px] animate-pulse">SUBIENDO...</span> : 
+            {subiendoFoto === 'visor_cero' ? <span className="text-[10px] animate-pulse">...</span> : 
              fotos.visor_cero.url ? <img src={fotos.visor_cero.url} className="w-full h-full object-cover rounded-2xl" /> : <>
               <span className="text-3xl mb-1">⚖️</span>
               <span className="text-[9px] font-black uppercase">Visor en Cero</span>
@@ -267,7 +230,7 @@ const getEcuadorFechaManual = (fechaISO?: string | null) => {
             onClick={() => abrirCamara('tanque_vacio')} 
             className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.tanque_vacio.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
           >
-            {subiendoFoto === 'tanque_vacio' ? <span className="text-[10px] animate-pulse">SUBIENDO...</span> :
+            {subiendoFoto === 'tanque_vacio' ? <span className="text-[10px] animate-pulse">...</span> :
              fotos.tanque_vacio.url ? <img src={fotos.tanque_vacio.url} className="w-full h-full object-cover rounded-2xl" /> : <>
               <span className="text-3xl mb-1">🛢️</span>
               <span className="text-[9px] font-black uppercase">Tanque Vacío</span>
@@ -275,7 +238,6 @@ const getEcuadorFechaManual = (fechaISO?: string | null) => {
           </button>
         </div>
 
-        {/* PESO Y FOTO FINAL */}
         <section className="bg-red-50 p-5 rounded-3xl border border-red-100 space-y-3">
           <label className="text-[10px] font-black text-red-700 uppercase ml-1">5. Cierre de Batch</label>
           <div className="flex gap-3">
