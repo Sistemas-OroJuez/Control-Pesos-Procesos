@@ -17,7 +17,6 @@ export default function ProcesoLlenado() {
   const [listaOperadores, setListaOperadores] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   
-  // Nuevo estado para controlar qué foto se está subiendo actualmente
   const [subiendoFoto, setSubiendoFoto] = useState<string | null>(null);
 
   const [datos, setDatos] = useState({
@@ -36,72 +35,28 @@ export default function ProcesoLlenado() {
     incidencia: { url: '' }
   });
 
+  // Función auxiliar para obtener fecha/hora actual en Zona Ecuador
+  const getEcuadorDate = () => {
+    return new Date(new Date().toLocaleString("en-US", { timeZone: "America/Guayaquil" }));
+  };
+
   useEffect(() => {
     setIsClient(true);
     
     async function inicializar() {
-      // Intentar recuperar datos del LocalStorage (borradores)
-      const borradorDatos = localStorage.getItem('draft_datos');
-      const borradorFotos = localStorage.getItem('draft_fotos');
-      const borradorBatch = localStorage.getItem('draft_batchId');
+      // 1. Generación de Batch ID: DDMMAAAHHMMSS
+      const ahora = getEcuadorDate();
+      const dd = String(ahora.getDate()).padStart(2, '0');
+      const mm = String(ahora.getMonth() + 1).padStart(2, '0');
+      const aaaa = ahora.getFullYear();
+      const hh = String(ahora.getHours()).padStart(2, '0');
+      const min = String(ahora.getMinutes()).padStart(2, '0');
+      const ss = String(ahora.getSeconds()).padStart(2, '0');
+      
+      const nuevoBatchId = `${dd}${mm}${aaaa}${hh}${min}${ss}`;
+      setBatchId(nuevoBatchId);
 
-      if (borradorDatos) setDatos(JSON.parse(borradorDatos));
-      if (borradorFotos) setFotos(JSON.parse(borradorFotos));
-
-      // Lógica de Generación de Batch ID (Mejorada para evitar duplicados)
-      if (borradorBatch && !borradorBatch.includes('NaN')) {
-        setBatchId(borradorBatch);
-      } else {
-        const hoy = new Date();
-        const d = String(hoy.getDate()).padStart(2, '0');
-        const m = String(hoy.getMonth() + 1).padStart(2, '0');
-        const a = String(hoy.getFullYear()).slice(-2);
-        const prefix = `EXT${d}${m}${a}`;
-        
-        // 1. Buscamos el Batch ID más alto físicamente guardado hoy
-        const { data: ultimosRegistros } = await supabase
-          .from('procesos_batch')
-          .select('batch_id')
-          .like('batch_id', `${prefix}%`)
-          .order('batch_id', { ascending: false })
-          .limit(1);
-
-        let nuevoNumero = 1;
-        if (ultimosRegistros && ultimosRegistros.length > 0) {
-          const ultimoId = ultimosRegistros[0].batch_id;
-          // Extraemos los últimos dos caracteres y los convertimos a número
-          const secuenciaActual = parseInt(ultimoId.slice(-2));
-          nuevoNumero = isNaN(secuenciaActual) ? 1 : secuenciaActual + 1;
-        }
-
-        // 2. Intentar reservar el número (bucle de seguridad)
-        let registroExitoso = false;
-        let idFinal = "";
-
-        while (!registroExitoso) {
-          idFinal = `${prefix}${String(nuevoNumero).padStart(2, '0')}`;
-          const { error: insertError } = await supabase
-            .from('procesos_batch')
-            .insert([{ 
-              batch_id: idFinal,
-              fecha_hora_inicio: new Date().toISOString() 
-            }]);
-
-          if (!insertError) {
-            registroExitoso = true;
-          } else if (insertError.code === '23505') { // Error de duplicado en Supabase
-            nuevoNumero++; // Si ya existe, probamos con el que sigue
-          } else {
-            console.error("Error reserva batch:", insertError);
-            break;
-          }
-        }
-
-        setBatchId(idFinal);
-        localStorage.setItem('draft_batchId', idFinal);
-      }
-
-      // Cargar parámetros de la base de datos
+      // 2. Cargar parámetros (Igual a tu archivo OK)
       const [resParams, resOps] = await Promise.all([
         supabase.from('parametros').select('*').eq('activo', true),
         supabase.from('operadores').select('*').eq('activo', true).order('nombre')
@@ -117,15 +72,6 @@ export default function ProcesoLlenado() {
     inicializar();
   }, []);
 
-  // Guardar progreso en LocalStorage cada vez que cambien los datos o fotos
-  useEffect(() => {
-    if (isClient && batchId !== 'Cargando...') {
-      localStorage.setItem('draft_datos', JSON.stringify(datos));
-      localStorage.setItem('draft_batchId', batchId);
-      localStorage.setItem('draft_fotos', JSON.stringify(fotos));
-    }
-  }, [datos, fotos, batchId, isClient]);
-
   if (!isClient) return null;
 
   const abrirCamara = async (tipo: keyof typeof fotos) => {
@@ -140,10 +86,11 @@ export default function ProcesoLlenado() {
         setSubiendoFoto(tipo);
         try {
           const urlNube = await subirImagen(file, tipo);
-          const nuevaInfoFoto = { url: urlNube, hora: new Date().toISOString() };
+          // Guardamos la hora de captura en formato ISO de Ecuador
+          const nuevaInfoFoto = { url: urlNube, hora: getEcuadorDate().toISOString() };
           setFotos(prev => ({ ...prev, [tipo]: nuevaInfoFoto }));
         } catch (error) {
-          alert("Error al subir la imagen. Intente de nuevo.");
+          alert("Error al subir la imagen.");
         } finally {
           setSubiendoFoto(null);
         }
@@ -153,50 +100,49 @@ export default function ProcesoLlenado() {
   };
 
   const guardarBatch = async () => {
-    if (!datos.operador_id || !datos.variedad || !datos.proveedor || !datos.turno || !datos.peso_final) {
+    if (!datos.operador_id || !datos.variedad || !datos.proveedor || !datos.turno || !datos.peso_final || !fotos.visor_cero.url || !fotos.tanque_vacio.url || !fotos.visor_lleno.url) {
       alert("Por favor complete todos los campos y tome las fotos requeridas");
       return;
     }
 
     setLoading(true);
 
-    const getEcuadorFechaManual = (fechaISO?: string | null) => {
-      const d = fechaISO ? new Date(fechaISO) : new Date();
+    // Formateador para que Supabase reciba YYYY-MM-DD HH:MM:SS en hora Ecuador
+    const formatEcuadorSQL = (fechaISO: string | null) => {
+      if (!fechaISO) return null;
+      const d = new Date(fechaISO);
       const pad = (n: number) => n < 10 ? '0' + n : n;
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     };
 
     const payload = {
+      batch_id: batchId,
       operador_id: datos.operador_id,
       variedad: datos.variedad,
       proveedor: datos.proveedor,
       turno: datos.turno,
-      peso_final_digitado: datos.peso_final,
+      peso_final_digitado: parseFloat(datos.peso_final),
       observaciones: datos.observaciones,
-      fecha_hora_inicio: getEcuadorFechaManual(fotos.visor_cero.hora),
-      fecha_hora_fin: getEcuadorFechaManual(),
       foto_visor_cero_url: fotos.visor_cero.url,
       foto_tanque_vacio_url: fotos.tanque_vacio.url,
       foto_visor_lleno_url: fotos.visor_lleno.url,
       foto_justificacion_url: fotos.incidencia.url,
-      hora_foto_visor_cero: getEcuadorFechaManual(fotos.visor_cero.hora),
-      hora_foto_tanque_vacio: getEcuadorFechaManual(fotos.tanque_vacio.hora),
-      hora_foto_visor_lleno: getEcuadorFechaManual()
+      fecha_hora_inicio: formatEcuadorSQL(fotos.visor_cero.hora),
+      fecha_hora_fin: formatEcuadorSQL(getEcuadorDate().toISOString()),
+      hora_foto_visor_cero: formatEcuadorSQL(fotos.visor_cero.hora),
+      hora_foto_tanque_vacio: formatEcuadorSQL(fotos.tanque_vacio.hora),
+      hora_foto_visor_lleno: formatEcuadorSQL(getEcuadorDate().toISOString())
     };
 
-    // Usamos UPDATE porque el registro ya fue insertado (reservado) al inicio
+    // INSERT DIRECTO (Como en tu archivo que sí funcionaba)
     const { error } = await supabase
       .from('procesos_batch')
-      .update(payload)
-      .eq('batch_id', batchId);
+      .insert([payload]);
 
     if (error) {
-      alert("Error al guardar en la base de datos: " + error.message);
+      alert("Error al guardar: " + error.message);
     } else {
-      alert("✅ PROCESO GUARDADO EXITOSAMENTE");
-      localStorage.removeItem('draft_datos');
-      localStorage.removeItem('draft_fotos');
-      localStorage.removeItem('draft_batchId');
+      alert("✅ PROCESO " + batchId + " GUARDADO EXITOSAMENTE");
       window.location.reload();
     }
     setLoading(false);
@@ -271,7 +217,7 @@ export default function ProcesoLlenado() {
             onClick={() => abrirCamara('visor_cero')} 
             className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.visor_cero.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
           >
-            {subiendoFoto === 'visor_cero' ? <span className="text-[10px] animate-pulse">SUBIENDO...</span> : 
+            {subiendoFoto === 'visor_cero' ? <span className="text-[10px] animate-pulse">...</span> : 
              fotos.visor_cero.url ? <img src={fotos.visor_cero.url} className="w-full h-full object-cover rounded-2xl" /> : <>
               <span className="text-3xl mb-1">⚖️</span>
               <span className="text-[9px] font-black uppercase">Visor en Cero</span>
@@ -284,7 +230,7 @@ export default function ProcesoLlenado() {
             onClick={() => abrirCamara('tanque_vacio')} 
             className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.tanque_vacio.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
           >
-            {subiendoFoto === 'tanque_vacio' ? <span className="text-[10px] animate-pulse">SUBIENDO...</span> :
+            {subiendoFoto === 'tanque_vacio' ? <span className="text-[10px] animate-pulse">...</span> :
              fotos.tanque_vacio.url ? <img src={fotos.tanque_vacio.url} className="w-full h-full object-cover rounded-2xl" /> : <>
               <span className="text-3xl mb-1">🛢️</span>
               <span className="text-[9px] font-black uppercase">Tanque Vacío</span>
