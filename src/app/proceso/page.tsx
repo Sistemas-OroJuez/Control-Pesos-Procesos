@@ -36,36 +36,72 @@ export default function ProcesoLlenado() {
     incidencia: { url: '' }
   });
 
-  // --- LÓGICA DE RECUPERACIÓN (AL CARGAR) ---
   useEffect(() => {
     setIsClient(true);
     
     async function inicializar() {
-      // Intentar recuperar borradores
+      // Intentar recuperar datos del LocalStorage (borradores)
       const borradorDatos = localStorage.getItem('draft_datos');
       const borradorFotos = localStorage.getItem('draft_fotos');
       const borradorBatch = localStorage.getItem('draft_batchId');
 
       if (borradorDatos) setDatos(JSON.parse(borradorDatos));
-      if (borradorBatch) setBatchId(borradorBatch);
       if (borradorFotos) setFotos(JSON.parse(borradorFotos));
 
-      if (!borradorBatch) {
+      // Lógica de Generación de Batch ID (Mejorada para evitar duplicados)
+      if (borradorBatch && !borradorBatch.includes('NaN')) {
+        setBatchId(borradorBatch);
+      } else {
         const hoy = new Date();
         const d = String(hoy.getDate()).padStart(2, '0');
         const m = String(hoy.getMonth() + 1).padStart(2, '0');
         const a = String(hoy.getFullYear()).slice(-2);
         const prefix = `EXT${d}${m}${a}`;
         
-        const { count } = await supabase
+        // 1. Buscamos el Batch ID más alto físicamente guardado hoy
+        const { data: ultimosRegistros } = await supabase
           .from('procesos_batch')
-          .select('*', { count: 'exact', head: true })
-          .like('batch_id', `${prefix}%`);
+          .select('batch_id')
+          .like('batch_id', `${prefix}%`)
+          .order('batch_id', { ascending: false })
+          .limit(1);
 
-        const sequence = String((count || 0) + 1).padStart(2, '0');
-        setBatchId(`${prefix}${sequence}`);
+        let nuevoNumero = 1;
+        if (ultimosRegistros && ultimosRegistros.length > 0) {
+          const ultimoId = ultimosRegistros[0].batch_id;
+          // Extraemos los últimos dos caracteres y los convertimos a número
+          const secuenciaActual = parseInt(ultimoId.slice(-2));
+          nuevoNumero = isNaN(secuenciaActual) ? 1 : secuenciaActual + 1;
+        }
+
+        // 2. Intentar reservar el número (bucle de seguridad)
+        let registroExitoso = false;
+        let idFinal = "";
+
+        while (!registroExitoso) {
+          idFinal = `${prefix}${String(nuevoNumero).padStart(2, '0')}`;
+          const { error: insertError } = await supabase
+            .from('procesos_batch')
+            .insert([{ 
+              batch_id: idFinal,
+              fecha_hora_inicio: new Date().toISOString() 
+            }]);
+
+          if (!insertError) {
+            registroExitoso = true;
+          } else if (insertError.code === '23505') { // Error de duplicado en Supabase
+            nuevoNumero++; // Si ya existe, probamos con el que sigue
+          } else {
+            console.error("Error reserva batch:", insertError);
+            break;
+          }
+        }
+
+        setBatchId(idFinal);
+        localStorage.setItem('draft_batchId', idFinal);
       }
 
+      // Cargar parámetros de la base de datos
       const [resParams, resOps] = await Promise.all([
         supabase.from('parametros').select('*').eq('activo', true),
         supabase.from('operadores').select('*').eq('activo', true).order('nombre')
@@ -81,9 +117,9 @@ export default function ProcesoLlenado() {
     inicializar();
   }, []);
 
-  // --- LÓGICA DE AUTO-GUARDADO DE DATOS ---
+  // Guardar progreso en LocalStorage cada vez que cambien los datos o fotos
   useEffect(() => {
-    if (isClient) {
+    if (isClient && batchId !== 'Cargando...') {
       localStorage.setItem('draft_datos', JSON.stringify(datos));
       localStorage.setItem('draft_batchId', batchId);
       localStorage.setItem('draft_fotos', JSON.stringify(fotos));
@@ -92,7 +128,6 @@ export default function ProcesoLlenado() {
 
   if (!isClient) return null;
 
-  // --- FUNCIÓN DE CÁMARA CON SUBIDA INMEDIATA ---
   const abrirCamara = async (tipo: keyof typeof fotos) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -102,19 +137,13 @@ export default function ProcesoLlenado() {
     input.onchange = async (e: any) => {
       const file = e.target.files[0];
       if (file) {
-        setSubiendoFoto(tipo); // Bloquea el botón visualmente
+        setSubiendoFoto(tipo);
         try {
-          // Subir directamente al Storage apenas se toma
           const urlNube = await subirImagen(file, tipo);
-          
-          const nuevaInfoFoto = { 
-            url: urlNube, 
-            hora: new Date().toISOString() 
-          };
-
+          const nuevaInfoFoto = { url: urlNube, hora: new Date().toISOString() };
           setFotos(prev => ({ ...prev, [tipo]: nuevaInfoFoto }));
         } catch (error) {
-          alert("Error al subir la imagen a la nube. Intente nuevamente.");
+          alert("Error al subir la imagen. Intente de nuevo.");
         } finally {
           setSubiendoFoto(null);
         }
@@ -124,52 +153,53 @@ export default function ProcesoLlenado() {
   };
 
   const guardarBatch = async () => {
-    // Validamos que existan las URLs de la nube
-    if (!fotos.visor_cero.url || !fotos.tanque_vacio.url || !fotos.visor_lleno.url) {
-      alert("⚠️ Faltan capturas obligatorias (Visor Cero, Tanque Vacío y Visor Lleno).");
-      return;
-    }
-    
     if (!datos.operador_id || !datos.variedad || !datos.proveedor || !datos.turno || !datos.peso_final) {
-      alert("⚠️ Todos los campos de selección y el peso final son obligatorios.");
+      alert("Por favor complete todos los campos y tome las fotos requeridas");
       return;
     }
 
     setLoading(true);
-    try {
-      const { error } = await supabase.from('procesos_batch').insert([{
-        batch_id: batchId,
-        operador_id: datos.operador_id,
-        variedad: datos.variedad,
-        proveedor: datos.proveedor,
-        turno: datos.turno,
-        foto_visor_cero_url: fotos.visor_cero.url,
-        hora_foto_visor_cero: fotos.visor_cero.hora,
-        foto_tanque_vacio_url: fotos.tanque_vacio.url,
-        hora_foto_tanque_vacio: fotos.tanque_vacio.hora,
-        foto_visor_lleno_url: fotos.visor_lleno.url,
-        hora_foto_visor_lleno: fotos.visor_lleno.hora,
-        foto_justificacion_url: fotos.incidencia.url || null,
-        peso_final_digitado: parseFloat(datos.peso_final),
-        observaciones: datos.observaciones,
-        fecha_hora_inicio: fotos.visor_cero.hora,
-        fecha_hora_fin: new Date().toISOString()
-      }]);
 
-      if (error) throw error;
-      
-      // Limpiar borradores al finalizar con éxito
+    const getEcuadorFechaManual = (fechaISO?: string | null) => {
+      const d = fechaISO ? new Date(fechaISO) : new Date();
+      const pad = (n: number) => n < 10 ? '0' + n : n;
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    };
+
+    const payload = {
+      operador_id: datos.operador_id,
+      variedad: datos.variedad,
+      proveedor: datos.proveedor,
+      turno: datos.turno,
+      peso_final_digitado: datos.peso_final,
+      observaciones: datos.observaciones,
+      fecha_hora_inicio: getEcuadorFechaManual(fotos.visor_cero.hora),
+      fecha_hora_fin: getEcuadorFechaManual(),
+      foto_visor_cero_url: fotos.visor_cero.url,
+      foto_tanque_vacio_url: fotos.tanque_vacio.url,
+      foto_visor_lleno_url: fotos.visor_lleno.url,
+      foto_justificacion_url: fotos.incidencia.url,
+      hora_foto_visor_cero: getEcuadorFechaManual(fotos.visor_cero.hora),
+      hora_foto_tanque_vacio: getEcuadorFechaManual(fotos.tanque_vacio.hora),
+      hora_foto_visor_lleno: getEcuadorFechaManual()
+    };
+
+    // Usamos UPDATE porque el registro ya fue insertado (reservado) al inicio
+    const { error } = await supabase
+      .from('procesos_batch')
+      .update(payload)
+      .eq('batch_id', batchId);
+
+    if (error) {
+      alert("Error al guardar en la base de datos: " + error.message);
+    } else {
+      alert("✅ PROCESO GUARDADO EXITOSAMENTE");
       localStorage.removeItem('draft_datos');
       localStorage.removeItem('draft_fotos');
       localStorage.removeItem('draft_batchId');
-
-      alert("✅ Registro guardado con éxito.");
-      router.push('/dashboard');
-    } catch (err: any) {
-      alert("❌ Error al guardar registro: " + err.message);
-    } finally {
-      setLoading(false);
+      window.location.reload();
     }
+    setLoading(false);
   };
 
   return (
@@ -234,7 +264,6 @@ export default function ProcesoLlenado() {
           </div>
         </section>
 
-        {/* FOTOS DE INICIO CON CARGA INDIVIDUAL */}
         <div className="grid grid-cols-2 gap-3">
           <button 
             type="button"
@@ -263,7 +292,6 @@ export default function ProcesoLlenado() {
           </button>
         </div>
 
-        {/* PESO Y FOTO FINAL */}
         <section className="bg-red-50 p-5 rounded-3xl border border-red-100 space-y-3">
           <label className="text-[10px] font-black text-red-700 uppercase ml-1">5. Cierre de Batch</label>
           <div className="flex gap-3">
