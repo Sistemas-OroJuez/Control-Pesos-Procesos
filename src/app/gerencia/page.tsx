@@ -38,141 +38,193 @@ export default function ReporteGerencialDefinitivo() {
       `)
       .gte('created_at', `${filtros.desde}T00:00:00`)
       .lte('created_at', `${filtros.hasta}T23:59:59`)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: true });
 
-    if (data) setDatos(data);
+    if (data) {
+      const calculados = data.map((curr, i) => {
+        const tBatch = calcularDiferencia(curr.fecha_hora_inicio, curr.fecha_hora_fin);
+        let idleTime = "0:00";
+        if (i > 0) {
+          const anterior = data[i - 1];
+          if (curr.turno === anterior.turno) {
+            idleTime = calcularDiferencia(anterior.fecha_hora_fin, curr.fecha_hora_inicio);
+          } else {
+            idleTime = "INICIO TURNO";
+          }
+        } else {
+          idleTime = "INICIO TURNO";
+        }
+        return { ...curr, tBatch, idleTime };
+      });
+      setDatos(calculados.reverse());
+    }
     setLoading(false);
   }
 
+  function calcularDiferencia(inicio: string, fin: string) {
+    if(!inicio || !fin) return "0:00";
+    const diff = Math.abs(new Date(fin).getTime() - new Date(inicio).getTime());
+    const mins = Math.floor(diff / 60000);
+    const secs = Math.floor((diff % 60000) / 1000);
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  }
+
+  const enviarWhatsApp = () => {
+    if (datos.length === 0) {
+      alert("No hay datos para enviar. Por favor, realice una consulta primero.");
+      return;
+    }
+
+    const variedades = Array.from(new Set(datos.map(d => d.variedad)));
+    let resumenVariedades = "";
+    
+    variedades.forEach(v => {
+      const items = datos.filter(d => d.variedad === v);
+      const subtotal = items.reduce((acc, c) => acc + Number(c.peso_final_digitado || 0), 0);
+      resumenVariedades += `✅ *${v}*: ${items.length} batches - ${subtotal.toLocaleString()} kg\n`;
+    });
+
+    const granTotal = datos.reduce((acc, c) => acc + Number(c.peso_final_digitado || 0), 0);
+
+    const mensaje = 
+      `📊 *REPORTE GERENCIAL OROJUEZ*\n` +
+      `📅 *Periodo:* ${filtros.desde} al ${filtros.hasta}\n` +
+      `----------------------------------\n` +
+      `🔢 *Total Batches:* ${datos.length}\n\n` +
+      `*DETALLE POR VARIEDAD:*\n` +
+      `${resumenVariedades}\n` +
+      `----------------------------------\n` +
+      `🚀 *TOTAL PROCESADO:* ${granTotal.toLocaleString()} KG\n\n` +
+      `_Reporte generado automáticamente._`;
+
+    const url = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
+    window.open(url, '_blank');
+  };
+
   const exportarExcel = () => {
-    const dataExcel = datos.map(reg => ({
-      Fecha: new Date(reg.created_at).toLocaleDateString(),
-      BatchID: reg.batch_id,
-      Operador: reg.operadores?.nombre,
-      Proveedor: reg.proveedor,
-      Variedad: reg.variedad,
-      Turno: reg.turno,
-      Peso_KG: reg.peso_final_digitado,
-      Observaciones: reg.observaciones || ''
-    }));
-    const ws = XLSX.utils.json_to_sheet(dataExcel);
+    const ws = XLSX.utils.json_to_sheet(datos.map(r => ({
+      Batch: r.batch_id,
+      Fecha: new Date(r.created_at).toLocaleDateString(),
+      Turno: r.turno,
+      Proveedor: r.proveedor,
+      Variedad: r.variedad,
+      Peso_Kg: r.peso_final_digitado,
+      Hora_Inicio_V0: r.fecha_hora_inicio ? new Date(r.fecha_hora_inicio).toLocaleTimeString() : '',
+      Hora_Foto2_TQ: r.fecha_hora_foto_2 ? new Date(r.fecha_hora_foto_2).toLocaleTimeString() : '',
+      Hora_Fin_PESO: r.fecha_hora_fin ? new Date(r.fecha_hora_fin).toLocaleTimeString() : '',
+      Duracion_Sist: r.tBatch,
+      Espera_Sist: r.idleTime,
+      Observaciones: r.observaciones || ''
+    })));
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Reporte");
-    XLSX.writeFile(wb, `Reporte_Produccion_${filtros.desde}_${filtros.hasta}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Reporte Gerencial");
+    XLSX.writeFile(wb, `Produccion_Detallada_${filtros.desde}.xlsx`);
   };
 
-  const formatHora = (isoStr: string | null) => {
-    if (!isoStr) return '--:--';
-    return new Date(isoStr).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const formatHora = (fechaStr: string | null) => {
+    if (!fechaStr) return "--:--";
+    return new Date(fechaStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
-  const registrosPorVariedad = datos.reduce((acc: any, curr) => {
-    const v = curr.variedad || 'SIN VARIEDAD';
-    if (!acc[v]) acc[v] = [];
-    acc[v].push(curr);
-    return acc;
-  }, {});
-
-  const granTotalPeso = datos.reduce((acc, curr) => acc + (Number(curr.peso_final_digitado) || 0), 0);
+  const variedadesUnicas = Array.from(new Set(datos.map(d => d.variedad)));
+  const granTotalPeso = datos.reduce((acc, c) => acc + Number(c.peso_final_digitado || 0), 0);
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        <header className="flex flex-col md:flex-row justify-between items-center mb-8 bg-white p-6 rounded-3xl shadow-sm gap-4">
-          <div>
-            <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Reporte Gerencial de Producción</h1>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Control de Pesos y Procesos</p>
+    <div className="min-h-screen bg-slate-50 p-4 font-sans">
+      <div className="max-w-7xl mx-auto space-y-4">
+        
+        <div className="bg-slate-900 text-white p-6 rounded-[2rem] shadow-2xl border-b-8 border-red-700 flex flex-wrap justify-between items-center print:hidden">
+          <div className="space-y-2">
+            <h1 className="text-2xl font-black italic text-red-500 uppercase">Eficiencia OroJuez</h1>
+            <div className="flex gap-2 items-center">
+              <input type="date" className="bg-slate-800 text-white text-[10px] p-2 rounded-lg border-none font-bold" value={filtros.desde} onChange={e => setFiltros({...filtros, desde: e.target.value})} />
+              <input type="date" className="bg-slate-800 text-white text-[10px] p-2 rounded-lg border-none font-bold" value={filtros.hasta} onChange={e => setFiltros({...filtros, hasta: e.target.value})} />
+              <button onClick={consultar} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-[10px] font-black uppercase">Consultar</button>
+            </div>
+          </div>
+          <div className="text-right">
+             <p className="text-[10px] font-bold text-slate-400 uppercase">Gran Total Pesado</p>
+             <p className="text-3xl font-black text-red-500">{granTotalPeso.toLocaleString()} <span className="text-sm">KG</span></p>
           </div>
           <div className="flex gap-2">
-            <button onClick={consultar} className="bg-red-700 text-white px-6 py-3 rounded-2xl font-bold text-xs uppercase hover:bg-red-800 transition-all">Actualizar</button>
-            <button onClick={exportarExcel} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold text-xs uppercase hover:bg-emerald-700 transition-all">Excel</button>
+            <button onClick={enviarWhatsApp} className="bg-green-600 hover:bg-green-500 px-5 py-2.5 rounded-2xl font-black text-[10px] uppercase shadow-lg flex items-center gap-2">
+              <span>📲</span> WhatsApp
+            </button>
+            <button onClick={exportarExcel} className="bg-emerald-700 hover:bg-emerald-600 px-5 py-2.5 rounded-2xl font-black text-[10px] uppercase shadow-lg flex items-center gap-2">
+              <span>📈</span> Excel
+            </button>
           </div>
-        </header>
+        </div>
 
-        <div className="bg-white rounded-[40px] shadow-2xl overflow-hidden border border-slate-200">
-          <div className="p-6 bg-slate-50 border-b flex flex-wrap gap-4 items-end">
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Desde</label>
-              <input type="date" className="block w-full p-3 rounded-xl border-2 border-slate-200 font-bold text-sm" value={filtros.desde} onChange={e => setFiltros({...filtros, desde: e.target.value})} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Hasta</label>
-              <input type="date" className="block w-full p-3 rounded-xl border-2 border-slate-200 font-bold text-sm" value={filtros.hasta} onChange={e => setFiltros({...filtros, hasta: e.target.value})} />
-            </div>
-          </div>
-
+        <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-gray-200">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-900 text-white text-[10px] uppercase tracking-widest">
+            <table className="w-full text-[10px] text-left">
+              <thead className="bg-slate-100 text-slate-600 font-black uppercase border-b">
+                <tr>
                   <th className="p-4">Fecha</th>
                   <th className="p-4">Batch / Turno</th>
-                  <th className="p-4">Operador / Proveedor</th>
-                  <th className="p-4">Evidencias Fotos</th>
-                  <th className="p-4">Justificación</th>
+                  <th className="p-4">Proveedor</th>
+                  <th className="p-4 text-center bg-blue-50 text-blue-700">⏱ Tiempo Batch</th>
+                  <th className="p-4 text-center bg-orange-50 text-orange-700">⌛ Idle Time</th>
+                  <th className="p-4 text-center">Fotos (Hora)</th>
                   <th className="p-4">Observaciones</th>
+                  <th className="p-4 text-center">Justificación</th>
                   <th className="p-4 text-right">Peso Total</th>
                 </tr>
               </thead>
-              <tbody>
-                {Object.keys(registrosPorVariedad).map(variedad => {
-                  const registros = registrosPorVariedad[variedad];
-                  const subtotal = registros.reduce((acc: number, curr: any) => acc + (Number(curr.peso_final_digitado) || 0), 0);
-                  
+              <tbody className="divide-y divide-gray-100">
+                {variedadesUnicas.map(variedad => {
+                  const items = datos.filter(d => d.variedad === variedad);
+                  const subtotal = items.reduce((acc, c) => acc + Number(c.peso_final_digitado || 0), 0);
+
                   return (
                     <React.Fragment key={variedad}>
-                      <tr className="bg-slate-200">
-                        <td colSpan={7} className="p-3 font-black text-slate-700 text-xs uppercase tracking-widest">
-                          Variedad: {variedad} <span className="ml-2 text-slate-500 font-normal">({registros.length} BATCHES)</span>
+                      <tr className="bg-slate-800 text-white">
+                        <td colSpan={9} className="p-3 font-black uppercase text-xs italic tracking-widest">
+                          Variedad: {variedad} <span className="text-red-400 ml-4">({items.length} Batches)</span>
                         </td>
                       </tr>
-                      {registros.map((reg: any) => (
-                        <tr key={reg.id} className="border-b hover:bg-slate-50 transition-colors">
+                      {items.map((reg) => (
+                        <tr key={reg.id} className="hover:bg-slate-50 transition-colors">
                           <td className="p-4">
-                            <span className="text-xs font-bold text-slate-600">
+                            <span className="text-[10px] font-bold text-slate-500 italic">
                               {new Date(reg.created_at).toLocaleDateString('es-EC')}
                             </span>
                           </td>
                           <td className="p-4">
-                            <div className="font-black text-slate-800 text-sm">#{reg.batch_id}</div>
-                            <div className="text-[10px] font-bold text-red-600 uppercase">{reg.turno}</div>
+                            <p className="font-black text-red-700 text-sm">#{reg.batch_id}</p>
+                            <p className="text-gray-400 font-bold uppercase text-[8px]">{reg.turno}</p>
+                          </td>
+                          <td className="p-4 uppercase font-bold text-slate-700">{reg.proveedor}</td>
+                          <td className="p-4 text-center font-black text-blue-600 bg-blue-50/30 border-x border-blue-100">{reg.tBatch} <span className="text-[8px] opacity-60">min</span></td>
+                          <td className="p-4 text-center font-black text-orange-600 bg-orange-50/30 border-r border-orange-100">
+                            {reg.idleTime === "INICIO TURNO" ? <span className="text-[7px] bg-orange-100 px-2 py-0.5 rounded text-orange-800">REINICIO</span> : <>{reg.idleTime} <span className="text-[8px] opacity-60">min</span></>}
                           </td>
                           <td className="p-4">
-                            <div className="font-bold text-slate-700 text-xs uppercase">{reg.operadores?.nombre}</div>
-                            <div className="text-[10px] text-slate-400 font-bold uppercase">{reg.proveedor}</div>
-                          </td>
-                          <td className="p-4">
-                            <div className="flex gap-2">
-                              {[ 
-                                { url: reg.foto_visor_cero_url, label: 'VO', hora: reg.hora_foto_visor_cero },
-                                { url: reg.foto_tanque_vacio_url, label: 'TQ', hora: reg.hora_foto_tanque_vacio },
-                                { url: reg.foto_visor_lleno_url, label: 'VL', hora: reg.hora_foto_visor_lleno }
-                              ].map((foto, i) => (
-                                <div key={i} className="flex flex-col items-center">
-                                  <div className="text-[8px] font-black text-slate-400 mb-1">{foto.label}</div>
+                            <div className="flex gap-2 justify-center">
+                              {[
+                                { url: reg.foto_visor_cero_url, label: 'V0', hora: reg.fecha_hora_inicio },
+                                { url: reg.foto_tanque_vacio_url, label: 'TQ', hora: reg.fecha_hora_foto_2 },
+                                { url: reg.foto_visor_lleno_url, label: 'PESO', hora: reg.fecha_hora_fin }
+                              ].map((foto, idx) => (
+                                <div key={idx} className="flex flex-col items-center">
                                   {foto.url ? (
-                                    <a href={foto.url} target="_blank" rel="noreferrer">
-                                      <img src={foto.url} className="w-10 h-10 object-cover rounded-lg border-2 border-white shadow-sm hover:scale-110 transition-transform" />
-                                    </a>
-                                  ) : <div className="w-10 h-10 bg-slate-100 rounded-lg border-2 border-dashed border-slate-200" />}
+                                    <a href={foto.url} target="_blank" className="bg-slate-800 text-white p-1 rounded text-[7px] font-black uppercase hover:bg-red-600">{foto.label}</a>
+                                  ) : <span className="text-gray-200">-</span>}
                                   <span className="text-[7px] font-bold text-gray-400 mt-1">{formatHora(foto.hora)}</span>
                                 </div>
                               ))}
                             </div>
                           </td>
-                          <td className="p-4 text-center">
-                            {reg.foto_justificacion_url ? (
-                              <a href={reg.foto_justificacion_url} target="_blank" rel="noreferrer">
-                                <img src={reg.foto_justificacion_url} className="w-10 h-10 object-cover rounded-lg border-2 border-amber-200 shadow-sm mx-auto hover:scale-110 transition-transform" />
-                              </a>
-                            ) : (
-                              <span className="text-[8px] text-slate-300 font-bold uppercase">Sin Foto</span>
-                            )}
-                          </td>
                           <td className="p-4">
-                            <p className="text-[10px] text-slate-600 font-medium max-w-[150px] italic leading-tight">
+                            <p className="text-[9px] text-slate-600 font-medium max-w-[120px] leading-tight italic">
                               {reg.observaciones || '---'}
                             </p>
+                          </td>
+                          <td className="p-4 text-center">
+                            {reg.foto_justificacion_url ? (
+                              <a href={reg.foto_justificacion_url} target="_blank" className="text-[9px] font-black text-blue-600 underline uppercase hover:text-red-700">Link</a>
+                            ) : <span className="text-gray-200">-</span>}
                           </td>
                           <td className="p-4 text-right font-black text-red-700 text-lg">
                             {Number(reg.peso_final_digitado).toLocaleString()} <span className="text-[8px] text-gray-400">KG</span>
@@ -180,7 +232,7 @@ export default function ReporteGerencialDefinitivo() {
                         </tr>
                       ))}
                       <tr className="bg-red-50 font-black text-red-700">
-                        <td colSpan={6} className="p-3 text-right uppercase text-[9px]">Subtotal {variedad}:</td>
+                        <td colSpan={8} className="p-3 text-right uppercase text-[9px]">Subtotal {variedad}:</td>
                         <td className="p-3 text-right text-sm">{subtotal.toLocaleString()} KG</td>
                       </tr>
                     </React.Fragment>
@@ -189,7 +241,7 @@ export default function ReporteGerencialDefinitivo() {
               </tbody>
               <tfoot className="bg-slate-900 text-white">
                 <tr>
-                  <td colSpan={6} className="p-6 text-right font-black uppercase text-xl italic text-red-500">Gran Total Producción:</td>
+                  <td colSpan={8} className="p-6 text-right font-black uppercase text-xl italic text-red-500">Gran Total Producción:</td>
                   <td className="p-6 text-right font-black text-red-500 text-3xl">{granTotalPeso.toLocaleString()} <span className="text-xs text-white">KG</span></td>
                 </tr>
               </tfoot>
