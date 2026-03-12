@@ -1,5 +1,4 @@
 ﻿'use client';
-// Importamos React para evitar el error de "React is not defined" en Vercel
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
@@ -9,7 +8,6 @@ export default function ReporteGerencialDefinitivo() {
   const router = useRouter();
   const [datos, setDatos] = useState<any[]>([]);
   const [empleados, setEmpleados] = useState<any[]>([]);
-  const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
   
   const [filtros, setFiltros] = useState({
@@ -45,11 +43,9 @@ export default function ReporteGerencialDefinitivo() {
     if (data) {
       const calculados = data.map((curr, i) => {
         const tBatch = calcularDiferencia(curr.fecha_hora_inicio, curr.fecha_hora_fin);
-        
         let idleTime = "0:00";
         if (i > 0) {
           const anterior = data[i - 1];
-          // Lógica de turno: Reinicia si cambia el nombre del turno
           if (curr.turno === anterior.turno) {
             idleTime = calcularDiferencia(anterior.fecha_hora_fin, curr.fecha_hora_inicio);
           } else {
@@ -73,6 +69,39 @@ export default function ReporteGerencialDefinitivo() {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   }
 
+  // --- NUEVA FUNCIÓN DE ENVÍO POR WHATSAPP ---
+  const enviarWhatsApp = () => {
+    if (datos.length === 0) {
+      alert("No hay datos para enviar. Por favor, realice una consulta primero.");
+      return;
+    }
+
+    const variedades = Array.from(new Set(datos.map(d => d.variedad)));
+    let resumenVariedades = "";
+    
+    variedades.forEach(v => {
+      const items = datos.filter(d => d.variedad === v);
+      const subtotal = items.reduce((acc, c) => acc + Number(c.peso_final_digitado || 0), 0);
+      resumenVariedades += `✅ *${v}*: ${items.length} batches - ${subtotal.toLocaleString()} kg\n`;
+    });
+
+    const granTotal = datos.reduce((acc, c) => acc + Number(c.peso_final_digitado || 0), 0);
+
+    const mensaje = 
+      `📊 *REPORTE GERENCIAL OROJUEZ*\n` +
+      `📅 *Periodo:* ${filtros.desde} al ${filtros.hasta}\n` +
+      `----------------------------------\n` +
+      `🔢 *Total Batches:* ${datos.length}\n\n` +
+      `*DETALLE POR VARIEDAD:*\n` +
+      `${resumenVariedades}\n` +
+      `----------------------------------\n` +
+      `🚀 *TOTAL PROCESADO:* ${granTotal.toLocaleString()} KG\n\n` +
+      `_Reporte generado automáticamente._`;
+
+    const url = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
+    window.open(url, '_blank');
+  };
+
   const exportarExcel = () => {
     const ws = XLSX.utils.json_to_sheet(datos.map(r => ({
       Batch: r.batch_id,
@@ -81,7 +110,6 @@ export default function ReporteGerencialDefinitivo() {
       Proveedor: r.proveedor,
       Variedad: r.variedad,
       Peso_Kg: r.peso_final_digitado,
-      // Columnas solicitadas para cálculo manual en Excel
       Hora_Inicio_V0: r.fecha_hora_inicio ? new Date(r.fecha_hora_inicio).toLocaleTimeString() : '',
       Hora_Foto2_TQ: r.fecha_hora_foto_2 ? new Date(r.fecha_hora_foto_2).toLocaleTimeString() : '',
       Hora_Fin_PESO: r.fecha_hora_fin ? new Date(r.fecha_hora_fin).toLocaleTimeString() : '',
@@ -105,7 +133,7 @@ export default function ReporteGerencialDefinitivo() {
     <div className="min-h-screen bg-slate-50 p-4 font-sans">
       <div className="max-w-7xl mx-auto space-y-4">
         
-        {/* HEADER GERENCIAL CON GRAN TOTAL */}
+        {/* HEADER GERENCIAL */}
         <div className="bg-slate-900 text-white p-6 rounded-[2rem] shadow-2xl border-b-8 border-red-700 flex flex-wrap justify-between items-center print:hidden">
           <div className="space-y-2">
             <h1 className="text-2xl font-black italic text-red-500 uppercase">Eficiencia OroJuez</h1>
@@ -120,12 +148,17 @@ export default function ReporteGerencialDefinitivo() {
              <p className="text-3xl font-black text-red-500">{granTotalPeso.toLocaleString()} <span className="text-sm">KG</span></p>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setShowModal(true)} className="bg-green-600 hover:bg-green-500 px-5 py-2.5 rounded-2xl font-black text-[10px] uppercase shadow-lg">📲 WhatsApp</button>
-            <button onClick={exportarExcel} className="bg-emerald-700 hover:bg-emerald-600 px-5 py-2.5 rounded-2xl font-black text-[10px] uppercase shadow-lg">📈 Excel</button>
+            {/* BOTÓN WHATSAPP YA CONECTADO */}
+            <button onClick={enviarWhatsApp} className="bg-green-600 hover:bg-green-500 px-5 py-2.5 rounded-2xl font-black text-[10px] uppercase shadow-lg flex items-center gap-2">
+              <span>📲</span> WhatsApp
+            </button>
+            <button onClick={exportarExcel} className="bg-emerald-700 hover:bg-emerald-600 px-5 py-2.5 rounded-2xl font-black text-[10px] uppercase shadow-lg flex items-center gap-2">
+              <span>📈</span> Excel
+            </button>
           </div>
         </div>
 
-        {/* TABLA AGRUPADA POR VARIEDAD */}
+        {/* TABLA AGRUPADA */}
         <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-gray-200">
           <div className="overflow-x-auto">
             <table className="w-full text-[10px] text-left">
@@ -201,7 +234,6 @@ export default function ReporteGerencialDefinitivo() {
           </div>
         </div>
       </div>
-      {/* MODAL DE WHATSAPP SE MANTIENE IGUAL... */}
     </div>
   );
 }
