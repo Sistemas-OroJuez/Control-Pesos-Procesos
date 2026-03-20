@@ -1,15 +1,15 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
   typescript: {
-    // !! ADVERTENCIA !!
-    // Esto permite que el build termine aunque haya errores de TypeScript.
-    // Úsalo para desbloquear el despliegue ahora mismo.
+    // Permite que el build termine aunque haya errores de TypeScript
     ignoreBuildErrors: true,
   },
-  // Si también tienes errores de ESLint, añade esto:
   eslint: {
+    // Permite que el build termine aunque haya errores de Linting
     ignoreDuringBuilds: true,
   },
+  // Aquí puedes agregar otras opciones compatibles si las necesitas en el futuro
 };
 
 export default nextConfig;
