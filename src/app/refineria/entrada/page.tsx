@@ -10,6 +10,10 @@ interface DatosFlujometro {
     temperatura_c: number;
     densidad_kg_l: number;
   };
+  // Campos nuevos para diagnóstico
+  debug?: string;
+  version_test?: string;
+  error?: string;
 }
 
 export default function IngresoACP() {
@@ -36,7 +40,7 @@ export default function IngresoACP() {
         .from('refineria_assets')
         .upload(fileName, file);
 
-      if (uploadError) throw new Error("Error al subir la imagen.");
+      if (uploadError) throw new Error("Error al subir la imagen a Supabase.");
 
       const { data: urlData } = supabase.storage
         .from('refineria_assets')
@@ -45,25 +49,34 @@ export default function IngresoACP() {
       const publicUrl = urlData.publicUrl;
       setFotoUrl(publicUrl);
       
-      // 2. Llamada al OCR Real de Google (tu endpoint de API)
+      // 2. Llamada al OCR con DETECTOR DE ERRORES MEJORADO
       const ocrResponse = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fotoUrl: publicUrl }),
       });
 
-      if (!ocrResponse.ok) throw new Error('Error en el motor de lectura OCR');
-
       const datosLeidos: DatosFlujometro = await ocrResponse.json();
+
+      // SI LA API RESPONDE CON ERROR (400, 500, etc.)
+      if (!ocrResponse.ok) {
+        throw new Error(
+          `❌ ERROR MOTOR OCR\n` +
+          `Mensaje: ${datosLeidos.error || 'Fallo desconocido'}\n` +
+          `Debug: ${datosLeidos.debug || 'Sin detalles'}\n` +
+          `Versión: ${datosLeidos.version_test || 'ANTIGUA (No actualizó)'}`
+        );
+      }
       
       // Validamos que se haya leído la sumatoria
       if (!datosLeidos.valorPrincipal || datosLeidos.valorPrincipal === 0) {
-        throw new Error("No se pudo leer la sumatoria. Por favor, tome la foto más de cerca.");
+        throw new Error("No se pudo extraer la sumatoria. Intente una foto más nítida.");
       }
 
       setDatosConfirmados(datosLeidos);
       
     } catch (error: any) {
+      // Este alert ahora será mucho más informativo
       alert(error.message);
       setFotoUrl(null);
     } finally {
@@ -107,17 +120,16 @@ export default function IngresoACP() {
         </div>
 
         <div className="p-6 space-y-6">
-          {/* FOTO / CAPTURA */}
           <div className="text-center">
             {fotoUrl ? (
               <div className="relative">
-                <img src={fotoUrl} className="w-full h-56 object-contain rounded-2xl bg-black" />
+                <img src={fotoUrl} className="w-full h-56 object-contain rounded-2xl bg-black" alt="Captura" />
                 {!loading && (
                   <button 
                     onClick={() => { setFotoUrl(null); setDatosConfirmados(null); }}
                     className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full p-3 shadow-xl font-bold text-xs"
                   >
-                    REPETIR FOTO
+                    REPETIR
                   </button>
                 )}
               </div>
@@ -136,10 +148,9 @@ export default function IngresoACP() {
             <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleCapture} />
           </div>
 
-          {/* DATOS BLOQUEADOS (SOLO LECTURA) */}
           {datosConfirmados && (
-            <div className="bg-gray-900 text-green-400 p-6 rounded-2xl font-mono shadow-2xl border-4 border-gray-800">
-              <p className="text-[9px] text-gray-500 mb-1 uppercase tracking-widest font-sans">Sumatoria (∑1) detected:</p>
+            <div className="bg-gray-900 text-green-400 p-6 rounded-2xl font-mono shadow-2xl border-4 border-gray-800 animate-pulse-slow">
+              <p className="text-[9px] text-gray-500 mb-1 uppercase tracking-widest font-sans">Sumatoria (∑1) detectada:</p>
               <p className="text-4xl font-bold mb-4">{datosConfirmados.valorPrincipal.toLocaleString()}</p>
               
               <div className="grid grid-cols-2 gap-2 text-[10px] border-t border-gray-700 pt-4">
@@ -158,14 +169,14 @@ export default function IngresoACP() {
           <textarea 
             value={observaciones}
             onChange={(e) => setObservaciones(e.target.value)}
-            className="w-full bg-gray-50 rounded-xl p-4 text-xs border outline-none"
+            className="w-full bg-gray-50 rounded-xl p-4 text-xs border outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Observaciones opcionales..."
           />
 
           <button 
             onClick={handleGuardar}
             disabled={loading || !datosConfirmados}
-            className={`w-full py-5 rounded-2xl font-black text-white ${loading || !datosConfirmados ? 'bg-gray-300' : 'bg-blue-600 shadow-blue-200 shadow-2xl'}`}
+            className={`w-full py-5 rounded-2xl font-black text-white transition-all ${loading || !datosConfirmados ? 'bg-gray-300' : 'bg-blue-600 shadow-blue-200 shadow-2xl active:scale-95'}`}
           >
             {loading ? 'ESPERE...' : 'CONFIRMAR Y SUBIR'}
           </button>
