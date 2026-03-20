@@ -41,21 +41,21 @@ export default function Dashboard() {
   // Definición de módulos de la aplicación
   const modules = [
     // --- MÓDULOS EXISTENTES (OPERATIVOS) ---
-    { id: 3, name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', adminOnly: false },
-    { id: 4, name: 'Reportes Generales', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes', adminOnly: false },
+    { id: 3, name: 'EXTRACTORA-Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', adminOnly: false },
+    { id: 4, name: 'EXTRACTORA-Reportes Generales Extractora', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes', adminOnly: false },
     
     // --- NUEVOS MÓDULOS DE REFINERÍA (OPERATIVOS - ABIERTOS) ---
-    { id: 10, name: 'Ingreso ACP', icon: '🔵', color: 'bg-blue-600 text-white', route: '/refineria/entrada', adminOnly: false },
-    { id: 11, name: 'Salida RBD', icon: '🟢', color: 'bg-emerald-600 text-white', route: '/refineria/salida', adminOnly: false },
-    { id: 13, name: 'Salida Ácido Graso', icon: '🟡', color: 'bg-amber-500 text-white', route: '/refineria/acido', adminOnly: false },
-    { id: 14, name: 'Inventario DS3 / Proceso', icon: '📦', color: 'bg-slate-500 text-white', route: '/refineria/inventario', adminOnly: false },
+    { id: 10, name: 'REFINERIA-Ingreso ACP', icon: '🔵', color: 'bg-blue-600 text-white', route: '/refineria/entrada', adminOnly: false },
+    { id: 11, name: 'REFINERIA-Salida RBD', icon: '🟢', color: 'bg-emerald-600 text-white', route: '/refineria/salida', adminOnly: false },
+    { id: 13, name: 'REFINERIA-Salida Ácido Graso', icon: '🟡', color: 'bg-amber-500 text-white', route: '/refineria/acido', adminOnly: false },
+    { id: 14, name: 'REFINERIA-Inventario DS3 / Proceso', icon: '📦', color: 'bg-slate-500 text-white', route: '/refineria/inventario', adminOnly: false },
     
     // --- NUEVO MÓDULO DE GESTIÓN REFINERÍA (PROTEGIDO) ---
-    { id: 12, name: 'Cierre de Balance Refinería', icon: '🏭', color: 'bg-slate-900 text-white', route: '/refineria/gestion', adminOnly: true },
+    { id: 12, name: 'REFINERIA-Cierre de Balance', icon: '🏭', color: 'bg-slate-900 text-white', route: '/refineria/gestion', adminOnly: true },
 
     // --- MÓDULOS EXISTENTES (ADMINISTRACIÓN) ---
-    { id: 5, name: 'Reportes Gerenciales', icon: '📊', color: 'bg-white text-gray-800', route: '/gerencia', adminOnly: true },
-    { id: 7, name: 'Estadísticas y Tiempos', icon: '⏱️', color: 'bg-white text-gray-800', route: '/estadisticas', adminOnly: true },
+    { id: 5, name: 'EXTRACTORA-Reportes Gerenciales', icon: '📊', color: 'bg-white text-gray-800', route: '/gerencia', adminOnly: true },
+    { id: 7, name: 'EXTRACTORA-Estadísticas y Tiempos', icon: '⏱️', color: 'bg-white text-gray-800', route: '/estadisticas', adminOnly: true },
     { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros', adminOnly: true },
     { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
   ];
