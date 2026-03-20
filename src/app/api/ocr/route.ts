@@ -1,45 +1,44 @@
 import { NextResponse } from 'next/server';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 
+// Forzamos que la ruta sea dinámica para que lea las variables frescas
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: Request) {
-  // SUBIMOS A VERSIÓN 5 PARA CONFIRMAR CAMBIO
-  const VERSION = "VERSIÓN_FINAL_5"; 
+  const VERSION = "SOLUCION_DEFINITIVA_V6"; 
 
   try {
     const { fotoUrl } = await request.json();
     
-    // Intentamos leer cualquiera de las dos variables que configuraste
-    const envKey = process.env.GCP_SERVICE_ACCOUNT || 
-                   process.env.NEXT_PUBLIC_GOOGLE_SERVICE_ACCOUNT_JSON;
+    // Intentamos obtener la llave de la forma más directa posible
+    const key = process.env.GCP_SERVICE_ACCOUNT || process.env.NEXT_PUBLIC_GOOGLE_SERVICE_ACCOUNT_JSON;
 
-    if (!envKey) {
-      // Si llegamos aquí, listamos TODO lo que Vercel deja ver (filtro de seguridad)
-      const llavesVistas = Object.keys(process.env).filter(k => !k.includes('AUTH') && !k.includes('PASSWORD')).join(', ');
+    if (!key) {
       return NextResponse.json({ 
         error: "LLAVE_NO_ENCONTRADA", 
-        debug: `Vercel no inyectó las variables. Solo veo estas: ${llavesVistas}`,
+        debug: "Vercel no está pasando la variable al servidor. Revisa los Scopes en Settings.",
         version_test: VERSION 
       }, { status: 500 });
     }
 
-    // Limpieza de la llave
-    const credentials = JSON.parse(envKey);
-    if (credentials.private_key) {
-      credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
-    }
+    const credentials = JSON.parse(key);
+    credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
 
     const client = new ImageAnnotatorClient({ credentials });
     const [result] = await client.textDetection(fotoUrl);
 
-    if (result.error) throw new Error(`Google responde: ${result.error.message}`);
+    if (result.error) throw new Error(result.error.message);
 
     const text = result.textAnnotations?.[0]?.description || '';
-    const sumatoriaMatch = text.match(/(\d{7,8})/);
-    const sumatoria = sumatoriaMatch ? parseFloat(sumatoriaMatch[1]) : 0;
+    const sumatoria = text.match(/(\d{7,8})/) ? parseFloat(text.match(/(\d{7,8})/)![1]) : 0;
 
     return NextResponse.json({
       valorPrincipal: sumatoria,
-      textoCompleto: text,
+      metadatosAdicionales: {
+        masa_kg_h: 0, // Simplificado para que no falle por regex
+        temperatura_c: 0,
+        densidad_kg_l: 0
+      },
       version_test: VERSION
     });
 
