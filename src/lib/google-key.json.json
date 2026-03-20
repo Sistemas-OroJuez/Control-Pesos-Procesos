@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "promising-saga-490817-j7",
+  "private_key_id": "5979d86cc272d4d3066e9d5acce4a8daf1f27467",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDjulTNzAT32Ekr\nuvnpEpqiUXVyUTxbuSWepfEDMa6bmH3PQC6s2doX33Rnf0a4MhZzy35fCIAsBlzh\njRFN1Z3RimfMsvGrWmJy/2Chev3vtJciAuXdWoZhqg5u62Teri9/b30s6795FpxJ\n91FbFZkmneLbTApn2aL64gPU1cJ2xLFF4ubi0Kfi86n4P4msgR4ExUxBPRgE5kYD\nLjjLHbRLisE7OxFaPG29/Sy47eH4vopQ2k6JWSBprnT78z3O818naWPrtfCS7/Gn\nVM/MhlIQ+JI6MVtYVkau9PftnOw6VtFvTMI00Oj1UoJuPUe8KtMCU7zHX6daJOAO\nERRjWiU7AgMBAAECggEAWbAiBCdM8ZvSPZHXKS81jaYNXmeWIP3LTi9Gu55OiWNG\ncWBywYrPNUXBX52l6Zd4dkR30c/UQwKChCZ94Sy3ijY7aUg0m+ruCSKBGTgKWOTD\n/RYtF7+2WzKRmqfEw1rQxBzRrOZwM61vAkaQWRIpjibymLHbC0mQwcRQA/voKcPR\nHeFQk7G3jf4qgOnbp+5CrV3WZSaXBBehVQkzm6GxIZPc7ASSnIR7xiWabAL0+dcp\nViCiCv0DfWW3Bk4FJeMqLuEwq9/qj+pgKxyCewkauA2eYcVn1QseBxiuISrJjDwW\nvJ4to7CmRwh7uxjz5cTGCjjYecPHQnY34edJUtU56QKBgQD/SUPAHqJDJiVtM4ap\nbsSGNUMt1r5MJHjmn+EFQMPY9MflD4WgeCrnD4Ft8XNGVzlHHzhw2foj4O3M6nlt\nc3yqQ7dDgJDysJuUBq0JGT7mkvsuK3tR/hbbikQ3hQJKTRa4VXBwoO+IlFppFPNT\nbwQjsQP7jhtFjoLTIEDCYPJoRQKBgQDkXVcXPoKRNr5NwfOOfLLWW9iwC7n/LVEp\nMB47ZbhM/U766yLSt0Ab9wB8R/negHYvWsDwKp/ljK2b+kvjTVO78N0RNArztasU\nhnRdLz3NNxIqTz3IGxa7r/ScKziGJUCfvoOtO8iZ27MweO5mIsskKiK1hiaghB4f\n2g4PKMDvfwKBgDbbhI6NRqsNUG+V6fMQ1XRNj8ES61OrZruQUadyUmOVvjrPyhRA\nnl+GqnZ4sx/DcJCC+fruLF13YUJuhGdrsLdZ09DSmNM99kCp6pcQ8L5ViVpTh62H\n31uP67bOgz56ME6uNXpOawq7bm40TVF5grc0u7lbwSqCRESgIqpicNTNAoGBAJwJ\nWzS6taRbb3TaDX1Sny/w2gKQQKqnYElwY3fabS/N9WVlvQmVxOxWvbItzAHIbPi2\nXha8ST0j/owRXkEV2R0V2zeiA8m6XAdOR7xURzotYvAd7O0J9WKRO+ZpcdnXIm0E\nVBzOOKdIgwuf1eVb6MnxMH4wB7yuCZdh+zFIe2wpAoGAC6TPS44cXUEdj6C1hprz\nKD2mp+aCY+2aQl46SeJGFbvsWdrDvXAFbuDRN5W7leOBft/wCTRV2SMx8j8kpV7k\nFiBitbIQ8/V/FCc6Zsi4RCnG7aXNYK9Z74MaPwuSqHMbr0hLRU3FwHslVn8wgXPo\nMx8lBi3mljTTnVKTEQKq5KE=\n-----END PRIVATE KEY-----\n",
+  "client_email": "refineria-ocr@promising-saga-490817-j7.iam.gserviceaccount.com",
+  "client_id": "110428059109004119799",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/refineria-ocr%40promising-saga-490817-j7.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
