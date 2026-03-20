@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation';
 export default function Dashboard() {
   const router = useRouter();
   
-  // Estado para controlar si las funciones de administrador están desbloqueadas
   const [isAdmin, setIsAdmin] = useState(false);
+  // Nuevo estado para controlar qué vista de botones mostrar
+  const [activeView, setActiveView] = useState<'principal' | 'extractora' | 'refineria'>('principal');
 
-  // Al cargar la página, verificar si el usuario ya se había autenticado como admin
   useEffect(() => {
     const savedAdminStatus = localStorage.getItem('orj_admin_access');
     if (savedAdminStatus === 'true') {
@@ -17,7 +17,6 @@ export default function Dashboard() {
   }, []);
 
   const handleLogoClick = () => {
-    // Si ya es admin, dar opción de bloquear
     if (isAdmin) {
       const confirmLock = confirm("¿Desea cerrar el modo administrador?");
       if (confirmLock) {
@@ -27,7 +26,6 @@ export default function Dashboard() {
       return;
     }
 
-    // Si no es admin, pedir clave
     const password = prompt("Ingrese clave de administrador para desbloquear funciones:");
     if (password === 'orj2026') { 
       setIsAdmin(true);
@@ -38,50 +36,44 @@ export default function Dashboard() {
     }
   };
 
-  // Definición de módulos de la aplicación
-  const modules = [
-    // --- MÓDULOS EXISTENTES (OPERATIVOS) ---
-    { id: 3, name: 'EXTRACTORA-Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', adminOnly: false },
-    { id: 4, name: 'EXTRACTORA-Reportes Generales Extractora', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes', adminOnly: false },
+  // Definición de módulos de la aplicación (Tu lista original con categorías)
+  const allModules = [
+    // EXTRACTORA
+    { id: 3, category: 'extractora', name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', adminOnly: false },
+    { id: 4, category: 'extractora', name: 'Reportes Generales', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes', adminOnly: false },
+    { id: 5, category: 'extractora', name: 'Reportes Gerenciales', icon: '📊', color: 'bg-white text-gray-800', route: '/gerencia', adminOnly: true },
+    { id: 7, category: 'extractora', name: 'Estadísticas y Tiempos', icon: '⏱️', color: 'bg-white text-gray-800', route: '/estadisticas', adminOnly: true },
     
-    // --- NUEVOS MÓDULOS DE REFINERÍA (OPERATIVOS - ABIERTOS) ---
-    { id: 10, name: 'REFINERIA-Ingreso ACP', icon: '🔵', color: 'bg-blue-600 text-white', route: '/refineria/entrada', adminOnly: false },
-    { id: 11, name: 'REFINERIA-Salida RBD', icon: '🟢', color: 'bg-emerald-600 text-white', route: '/refineria/salida', adminOnly: false },
-    { id: 13, name: 'REFINERIA-Salida Ácido Graso', icon: '🟡', color: 'bg-amber-500 text-white', route: '/refineria/acido', adminOnly: false },
-    { id: 14, name: 'REFINERIA-Inventario DS3 / Proceso', icon: '📦', color: 'bg-slate-500 text-white', route: '/refineria/inventario', adminOnly: false },
-    
-    // --- NUEVO MÓDULO DE GESTIÓN REFINERÍA (PROTEGIDO) ---
-    { id: 12, name: 'REFINERIA-Cierre de Balance', icon: '🏭', color: 'bg-slate-900 text-white', route: '/refineria/gestion', adminOnly: true },
+    // REFINERÍA
+    { id: 10, category: 'refineria', name: 'Ingreso ACP', icon: '🔵', color: 'bg-blue-600 text-white', route: '/refineria/entrada', adminOnly: false },
+    { id: 11, category: 'refineria', name: 'Salida RBD', icon: '🟢', color: 'bg-emerald-600 text-white', route: '/refineria/salida', adminOnly: false },
+    { id: 13, category: 'refineria', name: 'Salida Ácido Graso', icon: '🟡', color: 'bg-amber-500 text-white', route: '/refineria/acido', adminOnly: false },
+    { id: 14, category: 'refineria', name: 'Inventario DS3 / Proceso', icon: '📦', color: 'bg-slate-500 text-white', route: '/refineria/inventario', adminOnly: false },
+    { id: 12, category: 'refineria', name: 'Cierre de Balance', icon: '🏭', color: 'bg-slate-900 text-white', route: '/refineria/gestion', adminOnly: true },
 
-    // --- MÓDULOS EXISTENTES (ADMINISTRACIÓN) ---
-    { id: 5, name: 'EXTRACTORA-Reportes Gerenciales', icon: '📊', color: 'bg-white text-gray-800', route: '/gerencia', adminOnly: true },
-    { id: 7, name: 'EXTRACTORA-Estadísticas y Tiempos', icon: '⏱️', color: 'bg-white text-gray-800', route: '/estadisticas', adminOnly: true },
-    { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros', adminOnly: true },
-    { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
+    // GENERALES (Se muestran en el "Home" si es admin)
+    { id: 2, category: 'general', name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros', adminOnly: true },
+    { id: 1, category: 'general', name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
   ];
 
-  // Filtrar módulos basándose en el estado isAdmin
-  const filteredModules = modules.filter(mod => isAdmin ? true : !mod.adminOnly);
+  // Filtrar según categoría activa y permisos
+  const filteredModules = allModules.filter(mod => {
+    const hasPermission = isAdmin ? true : !mod.adminOnly;
+    return hasPermission && mod.category === activeView;
+  });
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Header Principal */}
       <header className="bg-white shadow-md border-b-4 border-red-700 p-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4">
-            {/* Logo con interacción de admin */}
             <img 
               src="/logo-orojuez.jpg" 
               alt="OroJuez Logo" 
               className={`h-16 w-auto object-contain cursor-help transition-opacity ${isAdmin ? 'opacity-100' : 'opacity-80'}`}
               onClick={handleLogoClick}
-              title={isAdmin ? "Click para bloquear funciones de administrador" : "Click para funciones especiales"}
             />
-            
-            {/* Divisor Vertical */}
             <div className="h-10 w-[2px] bg-gray-200 hidden md:block"></div>
-            
-            {/* Título de la App */}
             <div>
               <h1 className="text-xl font-black text-gray-800 tracking-tighter leading-none">
                 OROJUEZ <span className="text-red-700">SA</span>
@@ -92,10 +84,8 @@ export default function Dashboard() {
             </div>
           </div>
           
-          {/* Botón Salir */}
           <button 
             onClick={() => {
-              // Limpiar estado admin al salir si se desea (opcional)
               localStorage.removeItem('orj_admin_access');
               router.push('/');
             }}
@@ -106,27 +96,74 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Grid de Módulos */}
       <main className="max-w-6xl mx-auto p-6 md:p-12">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredModules.map((mod) => (
+        
+        {/* VISTA PRINCIPAL: SELECCIÓN DE ÁREA */}
+        {activeView === 'principal' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-10">
             <button
-              key={mod.id}
-              onClick={() => router.push(mod.route)}
-              className={mod.color + " p-10 rounded-2xl shadow-sm border border-gray-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center group"}
+              onClick={() => setActiveView('extractora')}
+              className="bg-red-700 text-white p-16 rounded-3xl shadow-xl hover:-translate-y-2 transition-all flex flex-col items-center group"
             >
-              <span className="text-4xl mb-4 group-hover:scale-110 transition-transform">
-                {mod.icon}
-              </span>
-              <span className="font-bold uppercase text-[11px] tracking-widest text-center px-2 leading-tight">
-                {mod.name}
-              </span>
+              <span className="text-7xl mb-6 group-hover:scale-110 transition-transform">🏗️</span>
+              <span className="text-2xl font-black tracking-tighter uppercase">Área Extractora</span>
             </button>
-          ))}
-        </div>
+
+            <button
+              onClick={() => setActiveView('refineria')}
+              className="bg-slate-800 text-white p-16 rounded-3xl shadow-xl hover:-translate-y-2 transition-all flex flex-col items-center group"
+            >
+              <span className="text-7xl mb-6 group-hover:scale-110 transition-transform">🏭</span>
+              <span className="text-2xl font-black tracking-tighter uppercase">Área Refinería</span>
+            </button>
+          </div>
+        )}
+
+        {/* VISTA DE SUB-MÓDULOS */}
+        {activeView !== 'principal' && (
+          <div>
+            <button 
+              onClick={() => setActiveView('principal')}
+              className="mb-8 flex items-center gap-2 text-red-700 font-bold hover:underline transition-all"
+            >
+              ⬅️ VOLVER AL MENÚ PRINCIPAL
+            </button>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredModules.map((mod) => (
+                <button
+                  key={mod.id}
+                  onClick={() => router.push(mod.route)}
+                  className={mod.color + " p-10 rounded-2xl shadow-sm border border-gray-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col items-center group"}
+                >
+                  <span className="text-4xl mb-4 group-hover:scale-110 transition-transform">{mod.icon}</span>
+                  <span className="font-bold uppercase text-[11px] tracking-widest text-center px-2 leading-tight">{mod.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* BOTONES GENERALES DE ADMIN (Solo aparecen en el principal si es admin) */}
+        {isAdmin && activeView === 'principal' && (
+          <div className="mt-12 border-t border-gray-200 pt-10">
+            <p className="text-center text-gray-400 font-bold text-[10px] tracking-[0.4em] uppercase mb-8">Configuración Global</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto">
+              {allModules.filter(m => m.category === 'general').map((mod) => (
+                <button
+                  key={mod.id}
+                  onClick={() => router.push(mod.route)}
+                  className={mod.color + " p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-all flex items-center justify-center gap-4"}
+                >
+                  <span className="text-2xl">{mod.icon}</span>
+                  <span className="font-bold uppercase text-[10px] tracking-widest">{mod.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
 
-      {/* Footer Fijo */}
       <footer className="fixed bottom-0 w-full p-4 text-center bg-gray-100/80 backdrop-blur-sm">
         <p className="text-[9px] text-gray-400 font-bold uppercase tracking-[0.3em]">
           OroJuez S.A. - Infraestructura Crítica de Datos
