@@ -1,14 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // En Next.js 16+, estas son las llaves correctas para saltar errores en el build
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  // Turbopack y otras configs van aquí si las necesitas
+  // En Next.js 16, si Turbopack da problemas con librerías de Node, 
+  // a veces es necesario indicar que no intente optimizar estas librerías de servidor
+  serverExternalPackages: ["@google-cloud/vision"],
 };
 
 export default nextConfig;
