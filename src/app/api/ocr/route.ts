@@ -4,7 +4,7 @@ import { ImageAnnotatorClient } from '@google-cloud/vision';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
-  const VERSION = "REINTENTO_FINAL_V10"; 
+  const VERSION = "REINTENTO_FINAL_V11"; 
 
   try {
     const { fotoUrl } = await request.json();
