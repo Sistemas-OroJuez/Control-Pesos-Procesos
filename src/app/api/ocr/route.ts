@@ -2,18 +2,22 @@ import { NextResponse } from 'next/server';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 
 export async function POST(request: Request) {
-  // --- TEST DE ACTUALIZACIÓN ---
-  const VERSION = "VERSIÓN_EXTREMA_1"; 
-  // -----------------------------
+  // CAMBIA ESTO A VERSIÓN 3 PARA ESTAR SEGUROS
+  const VERSION = "VERSIÓN_EXTREMA_3"; 
 
   try {
     const { fotoUrl } = await request.json();
-    const envKey = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    
+    // Intentamos leer la variable de 3 formas distintas
+    const envKey = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || 
+                   process.env.NEXT_PUBLIC_GOOGLE_SERVICE_ACCOUNT_JSON ||
+                   "NO_EXISTE";
 
-    if (!envKey) {
+    if (envKey === "NO_EXISTE") {
+      // Si llegamos aquí, Vercel realmente no nos está dando la variable
       return NextResponse.json({ 
-        error: "ERROR_SISTEMA", 
-        debug: "La variable no existe en Vercel",
+        error: "ERROR_DE_ENTORNO_VERCEL", 
+        debug: `La variable no está inyectada. Nombres detectados: ${Object.keys(process.env).filter(k => k.includes('GOOGLE')).join(', ')}`,
         version_test: VERSION 
       }, { status: 500 });
     }
@@ -24,23 +28,17 @@ export async function POST(request: Request) {
     const client = new ImageAnnotatorClient({ credentials });
     const [result] = await client.textDetection(fotoUrl);
 
-    if (result.error) {
-      return NextResponse.json({ 
-        error: "ERROR_GOOGLE", 
-        debug: result.error.message,
-        version_test: VERSION 
-      }, { status: 500 });
-    }
+    if (result.error) throw new Error(result.error.message);
 
+    const text = result.textAnnotations?.[0]?.description || '';
     return NextResponse.json({
-      mensaje: "Si ves esto, el OCR funcionó",
-      version_test: VERSION,
-      texto: result.textAnnotations?.[0]?.description || "Sin texto"
+      valorPrincipal: text.match(/(\d{7,8})/) ? parseFloat(text.match(/(\d{7,8})/)![1]) : 0,
+      version_test: VERSION
     });
 
   } catch (error: any) {
     return NextResponse.json({ 
-      error: "FALLO_CRITICO", 
+      error: "FALLO_MOTOR_OCR", 
       debug: error.message,
       version_test: VERSION 
     }, { status: 500 });
