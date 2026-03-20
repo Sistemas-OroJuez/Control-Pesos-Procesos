@@ -11,8 +11,7 @@ export async function POST(request: Request) {
     const { fotoUrl } = await request.json();
     
     // Intentamos obtener la llave de la forma más directa posible
-    const key = process.env.GCP_SERVICE_ACCOUNT || process.env.NEXT_PUBLIC_GOOGLE_SERVICE_ACCOUNT_JSON;
-
+    const key = process.env['GCP_SERVICE_ACCOUNT'] || process.env['NEXT_PUBLIC_GOOGLE_SERVICE_ACCOUNT_JSON'];
     if (!key) {
       return NextResponse.json({ 
         error: "LLAVE_NO_ENCONTRADA", 
