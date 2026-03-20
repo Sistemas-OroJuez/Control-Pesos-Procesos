@@ -1,87 +1,60 @@
 import { NextResponse } from 'next/server';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 
-// Función para inicializar el cliente con limpieza de llave para Vercel
-const getVisionClient = () => {
-  const envKey = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-
-  if (envKey) {
-    try {
-      // 1. Parseamos el JSON que pegaste en Vercel
-      const credentials = JSON.parse(envKey);
-      
-      // 2. REPARACIÓN CRÍTICA: Convertimos los \n de texto en saltos de línea reales
-      if (credentials.private_key) {
-        credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
-      }
-      
-      return new ImageAnnotatorClient({ credentials });
-    } catch (err) {
-      console.error("Error al configurar credenciales de Google:", err);
-    }
-  }
-
-  // Si falla o no hay variable, intenta usar el archivo local (solo desarrollo)
-  return new ImageAnnotatorClient({ keyFilename: './src/lib/google-key.json' });
-};
-
-// Instanciamos el cliente
-const client = getVisionClient();
-
 export async function POST(request: Request) {
   try {
     const { fotoUrl } = await request.json();
+    const envKey = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
-    if (!fotoUrl) {
-      return NextResponse.json({ error: "No se proporcionó la URL de la foto" }, { status: 400 });
-    }
+    if (!envKey) throw new Error("Vercel no detecta la variable GOOGLE_SERVICE_ACCOUNT_JSON");
 
-    // Ejecutar detección de texto
-    const [result] = await client.textDetection(fotoUrl);
-    const detections = result.textAnnotations;
-    const fullText = detections && detections.length > 0 ? detections[0].description : '';
-
-    if (!fullText) {
-      return NextResponse.json({ error: "No se detectó texto en la imagen" }, { status: 422 });
-    }
-
-    // Función auxiliar para extraer números con Regex
-    const extraerNumero = (regex: RegExp) => {
-      const match = fullText.match(regex);
-      if (match) {
-        // Limpiamos espacios y cambiamos coma por punto para el parseFloat
-        return parseFloat(match[1].replace(/\s/g, '').replace(',', '.'));
+    // Intentar parsear y limpiar la llave privada
+    let credentials;
+    try {
+      credentials = JSON.parse(envKey);
+      if (credentials.private_key) {
+        credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
       }
-      return 0;
+    } catch (e) {
+      throw new Error("El JSON de la variable en Vercel está mal formateado");
+    }
+
+    const client = new ImageAnnotatorClient({ credentials });
+
+    // Pedir lectura a Google
+    const [result] = await client.textDetection(fotoUrl);
+    
+    // Si Google responde con un error específico (ej. cuota, red)
+    if (result.error) {
+      throw new Error(`Google Cloud dice: ${result.error.message}`);
+    }
+
+    const text = result.textAnnotations?.[0]?.description || '';
+    if (!text) throw new Error("No se detectó texto en la imagen. Intenta una foto más clara.");
+
+    // Extraer datos (Sumatoria de 7-8 dígitos)
+    const extraerNum = (reg: RegExp) => {
+      const m = text.match(reg);
+      return m ? parseFloat(m[1].replace(/\s/g, '').replace(',', '.')) : 0;
     };
 
-    // LÓGICA DE EXTRACCIÓN ESPECÍFICA PARA TU FLUJÓMETRO
-    // 1. Buscamos la sumatoria ∑1 (o el número de 7-8 dígitos)
-    let sumatoria = extraerNumero(/∑\s?1?\s?(\d+[\d\s]*)/);
-    if (sumatoria === 0) {
-      const largoMatch = fullText.match(/(\d{7,8})/);
-      sumatoria = largoMatch ? parseFloat(largoMatch[1]) : 0;
-    }
-
-    // 2. Extraemos los metadatos adicionales
-    const masa = extraerNumero(/ṁ\s?(\d+[.,]\d+)/) || extraerNumero(/(\d+[.,]\d+)\s?kg\/h/);
-    const temp = extraerNumero(/🌡\s?1?\s?(\d+[.,]\d+)/) || extraerNumero(/(\d+[.,]\d+)\s?°C/);
-    const dens = extraerNumero(/ρ\s?(\d+[.,]\d+)/) || extraerNumero(/(\d+[.,]\d+)\s?kg\/L/);
+    const sumatoria = text.match(/(\d{7,8})/) ? parseFloat(text.match(/(\d{7,8})/)![1]) : 0;
 
     return NextResponse.json({
       valorPrincipal: sumatoria,
       metadatosAdicionales: {
-        masa_kg_h: masa,
-        temperatura_c: temp,
-        densidad_kg_l: dens
+        masa_kg_h: extraerNum(/ṁ\s?(\d+[.,]\d+)/),
+        temperatura_c: extraerNum(/🌡\s?(\d+[.,]\d+)/),
+        densidad_kg_l: extraerNum(/ρ\s?(\d+[.,]\d+)/)
       }
     });
 
   } catch (error: any) {
-    console.error("DETALLE ERROR OCR:", error);
+    // ESTE MENSAJE ES EL QUE NECESITO QUE ME DIGAS SI FALLA
+    console.error("DEBUG OCR:", error.message);
     return NextResponse.json({ 
-      error: "Error en el motor OCR", 
-      details: error.message 
+      error: "Error en el motor de lectura OCR", 
+      debug: error.message 
     }, { status: 500 });
   }
 }
