@@ -4,11 +4,14 @@ import { ImageAnnotatorClient } from '@google-cloud/vision';
 export async function POST(request: Request) {
   try {
     const { fotoUrl } = await request.json();
+    
+    // VALIDACIÓN 1: ¿Existe la variable?
     const envKey = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    if (!envKey) {
+      return NextResponse.json({ error: "Configuración ausente", debug: "La variable GOOGLE_SERVICE_ACCOUNT_JSON no existe en Vercel." }, { status: 500 });
+    }
 
-    if (!envKey) throw new Error("Vercel no detecta la variable GOOGLE_SERVICE_ACCOUNT_JSON");
-
-    // Intentar parsear y limpiar la llave privada
+    // VALIDACIÓN 2: Limpieza de la llave
     let credentials;
     try {
       credentials = JSON.parse(envKey);
@@ -16,44 +19,37 @@ export async function POST(request: Request) {
         credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
       }
     } catch (e) {
-      throw new Error("El JSON de la variable en Vercel está mal formateado");
+      return NextResponse.json({ error: "Error de formato", debug: "El JSON en Vercel tiene un error de sintaxis (comas o llaves mal puestas)." }, { status: 500 });
     }
 
+    // INSTANCIA DEL CLIENTE
     const client = new ImageAnnotatorClient({ credentials });
 
-    // Pedir lectura a Google
+    // PETICIÓN A GOOGLE
     const [result] = await client.textDetection(fotoUrl);
     
-    // Si Google responde con un error específico (ej. cuota, red)
+    // ERROR DIRECTO DE GOOGLE
     if (result.error) {
-      throw new Error(`Google Cloud dice: ${result.error.message}`);
+      return NextResponse.json({ error: "Google rechazó la petición", debug: result.error.message }, { status: 500 });
     }
 
     const text = result.textAnnotations?.[0]?.description || '';
-    if (!text) throw new Error("No se detectó texto en la imagen. Intenta una foto más clara.");
+    if (!text) {
+      return NextResponse.json({ error: "Imagen ilegible", debug: "Google no encontró texto en la foto." }, { status: 422 });
+    }
 
-    // Extraer datos (Sumatoria de 7-8 dígitos)
-    const extraerNum = (reg: RegExp) => {
-      const m = text.match(reg);
-      return m ? parseFloat(m[1].replace(/\s/g, '').replace(',', '.')) : 0;
-    };
-
-    const sumatoria = text.match(/(\d{7,8})/) ? parseFloat(text.match(/(\d{7,8})/)![1]) : 0;
+    // EXTRACCIÓN SIMPLE (Para probar que funcione)
+    const sumatoriaMatch = text.match(/(\d{7,8})/);
+    const sumatoria = sumatoriaMatch ? parseFloat(sumatoriaMatch[1]) : 0;
 
     return NextResponse.json({
       valorPrincipal: sumatoria,
-      metadatosAdicionales: {
-        masa_kg_h: extraerNum(/ṁ\s?(\d+[.,]\d+)/),
-        temperatura_c: extraerNum(/🌡\s?(\d+[.,]\d+)/),
-        densidad_kg_l: extraerNum(/ρ\s?(\d+[.,]\d+)/)
-      }
+      textoCompleto: text // Esto nos servirá para ver qué está leyendo realmente
     });
 
   } catch (error: any) {
-    // ESTE MENSAJE ES EL QUE NECESITO QUE ME DIGAS SI FALLA
-    console.error("DEBUG OCR:", error.message);
     return NextResponse.json({ 
-      error: "Error en el motor de lectura OCR", 
+      error: "Fallo crítico en el motor", 
       debug: error.message 
     }, { status: 500 });
   }
