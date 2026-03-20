@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation';
 export default function Dashboard() {
   const router = useRouter();
   
-  // Estado inicializado desde localStorage para persistencia
+  // Estado para controlar si las funciones de administrador están desbloqueadas
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Efecto para cargar el estado guardado al iniciar
+  // Al cargar la página, verificar si el usuario ya se había autenticado como admin
   useEffect(() => {
     const savedAdminStatus = localStorage.getItem('orj_admin_access');
     if (savedAdminStatus === 'true') {
@@ -16,8 +16,8 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Función para pedir la clave y guardarla en el navegador
   const handleLogoClick = () => {
+    // Si ya es admin, dar opción de bloquear
     if (isAdmin) {
       const confirmLock = confirm("¿Desea cerrar el modo administrador?");
       if (confirmLock) {
@@ -27,40 +27,61 @@ export default function Dashboard() {
       return;
     }
 
+    // Si no es admin, pedir clave
     const password = prompt("Ingrese clave de administrador para desbloquear funciones:");
     if (password === 'orj2026') { 
       setIsAdmin(true);
-      localStorage.setItem('orj_admin_access', 'true'); // Persistencia activada
+      localStorage.setItem('orj_admin_access', 'true');
       alert("Funciones de administrador desbloqueadas.");
     } else if (password !== null) {
       alert("Clave incorrecta.");
     }
   };
 
+  // Definición de módulos de la aplicación
   const modules = [
+    // --- MÓDULOS EXISTENTES (OPERATIVOS) ---
     { id: 3, name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', adminOnly: false },
-    { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros', adminOnly: true },
     { id: 4, name: 'Reportes Generales', icon: '📋', color: 'bg-white text-gray-800', route: '/reportes', adminOnly: false },
+    
+    // --- NUEVOS MÓDULOS DE REFINERÍA (OPERATIVOS - ABIERTOS) ---
+    { id: 10, name: 'Ingreso ACP', icon: '🔵', color: 'bg-blue-600 text-white', route: '/refineria/entrada', adminOnly: false },
+    { id: 11, name: 'Salida RBD', icon: '🟢', color: 'bg-emerald-600 text-white', route: '/refineria/salida', adminOnly: false },
+    { id: 13, name: 'Salida Ácido Graso', icon: '🟡', color: 'bg-amber-500 text-white', route: '/refineria/acido', adminOnly: false },
+    { id: 14, name: 'Inventario DS3 / Proceso', icon: '📦', color: 'bg-slate-500 text-white', route: '/refineria/inventario', adminOnly: false },
+    
+    // --- NUEVO MÓDULO DE GESTIÓN REFINERÍA (PROTEGIDO) ---
+    { id: 12, name: 'Cierre de Balance Refinería', icon: '🏭', color: 'bg-slate-900 text-white', route: '/refineria/gestion', adminOnly: true },
+
+    // --- MÓDULOS EXISTENTES (ADMINISTRACIÓN) ---
     { id: 5, name: 'Reportes Gerenciales', icon: '📊', color: 'bg-white text-gray-800', route: '/gerencia', adminOnly: true },
     { id: 7, name: 'Estadísticas y Tiempos', icon: '⏱️', color: 'bg-white text-gray-800', route: '/estadisticas', adminOnly: true },
+    { id: 2, name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros', adminOnly: true },
     { id: 1, name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
   ];
 
+  // Filtrar módulos basándose en el estado isAdmin
   const filteredModules = modules.filter(mod => isAdmin ? true : !mod.adminOnly);
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* Header Principal */}
       <header className="bg-white shadow-md border-b-4 border-red-700 p-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4">
+            {/* Logo con interacción de admin */}
             <img 
               src="/logo-orojuez.jpg" 
               alt="OroJuez Logo" 
               className={`h-16 w-auto object-contain cursor-help transition-opacity ${isAdmin ? 'opacity-100' : 'opacity-80'}`}
               onClick={handleLogoClick}
-              title={isAdmin ? "Click para bloquear" : "Click para funciones especiales"}
+              title={isAdmin ? "Click para bloquear funciones de administrador" : "Click para funciones especiales"}
             />
+            
+            {/* Divisor Vertical */}
             <div className="h-10 w-[2px] bg-gray-200 hidden md:block"></div>
+            
+            {/* Título de la App */}
             <div>
               <h1 className="text-xl font-black text-gray-800 tracking-tighter leading-none">
                 OROJUEZ <span className="text-red-700">SA</span>
@@ -71,9 +92,11 @@ export default function Dashboard() {
             </div>
           </div>
           
+          {/* Botón Salir */}
           <button 
             onClick={() => {
-              localStorage.removeItem('orj_admin_access'); // Limpiar al salir
+              // Limpiar estado admin al salir si se desea (opcional)
+              localStorage.removeItem('orj_admin_access');
               router.push('/');
             }}
             className="bg-gray-800 hover:bg-black text-white px-5 py-2 rounded-lg font-bold text-xs transition-all flex items-center gap-2 shadow-lg"
@@ -83,6 +106,7 @@ export default function Dashboard() {
         </div>
       </header>
 
+      {/* Grid de Módulos */}
       <main className="max-w-6xl mx-auto p-6 md:p-12">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredModules.map((mod) => (
@@ -102,6 +126,7 @@ export default function Dashboard() {
         </div>
       </main>
 
+      {/* Footer Fijo */}
       <footer className="fixed bottom-0 w-full p-4 text-center bg-gray-100/80 backdrop-blur-sm">
         <p className="text-[9px] text-gray-400 font-bold uppercase tracking-[0.3em]">
           OroJuez S.A. - Infraestructura Crítica de Datos
