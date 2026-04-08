@@ -30,7 +30,7 @@ export default function IngresoACP() {
     setDatosConfirmados(null);
 
     try {
-      // 1. Subida a Supabase Storage
+      // 1. Subir imagen a Supabase
       const fileName = `${Date.now()}_acp.jpg`;
       const { error: uploadError } = await supabase.storage
         .from('refineria_assets')
@@ -45,46 +45,35 @@ export default function IngresoACP() {
       const publicUrl = urlData.publicUrl;
       setFotoUrl(publicUrl);
       
-      // 2. Ejecución de OCR Local
-      const result = await Tesseract.recognize(publicUrl, 'eng', {
-        logger: m => console.log(m.status, m.progress)
-      });
-
+      // 2. Ejecutar OCR localmente
+      const result = await Tesseract.recognize(publicUrl, 'eng');
       const text = result.data.text;
       console.log("Texto detectado:", text);
 
-      // --- ESTRATEGIA DE EXTRACCIÓN FLEXIBLE ---
+      // --- LÓGICA DE EXTRACCIÓN FLEXIBLE ---
       
-      // Buscamos todos los números que tengan punto decimal (ej: 4935.142, 40.80, etc.)
-      const decimalesEncontrados = text.match(/\d+\.\d+/g) || [];
+      // Buscamos todos los números que tengan un punto decimal (ej. 4935.142)
+      const decimales = text.match(/\d+\.\d+/g) || [];
       
-      // Buscamos el número largo de 7-8 dígitos (Sumatoria Σ1)
+      // Buscamos el número largo de 7-8 dígitos (Sumatoria)
       const sumMatch = text.match(/(\d{7,8})/);
       const sumatoria = sumMatch ? parseInt(sumMatch[1], 10) : 0;
 
-      // Asignación por posición según la pantalla del flujómetro:
-      // El 1ro suele ser Masa (ṁ)
-      // El 2do suele ser Temperatura (🌡)
-      // El 3ro suele ser Densidad (ρ)
-      let masa = 0;
-      let temp = 0;
-      let dens = 0;
-
-      if (decimalesEncontrados.length >= 1) masa = parseFloat(decimalesEncontrados[0]);
-      if (decimalesEncontrados.length >= 2) temp = parseFloat(decimalesEncontrados[1]);
-      if (decimalesEncontrados.length >= 3) dens = parseFloat(decimalesEncontrados[2]);
-
-      setDatosConfirmados({
+      // Asignamos por orden de aparición en la pantalla del flujómetro:
+      // 1° Masa, 2° Temperatura, 3° Densidad
+      const datosExtraidos: DatosFlujometro = {
         valorPrincipal: sumatoria,
         metadatosAdicionales: {
-          masa_kg_h: masa,
-          temperatura_c: temp,
-          densidad_kg_l: dens
+          masa_kg_h: decimales[0] ? parseFloat(decimales[0]) : 0,
+          temperatura_c: decimales[1] ? parseFloat(decimales[1]) : 0,
+          densidad_kg_l: decimales[2] ? parseFloat(decimales[2]) : 0
         }
-      });
+      };
+
+      setDatosConfirmados(datosExtraidos);
       
     } catch (error: any) {
-      alert("Error en lectura: " + error.message);
+      alert("Error: " + error.message);
       setFotoUrl(null);
     } finally {
       setLoading(false);
@@ -102,11 +91,11 @@ export default function IngresoACP() {
           valor_lectura: datosConfirmados.valorPrincipal, 
           foto_url: fotoUrl,
           observaciones: observaciones,
-          // Guardamos los valores numéricos detectados
+          // Guardar explícitamente como números
           masa_kg_h: Number(datosConfirmados.metadatosAdicionales.masa_kg_h),
           temperatura_c: Number(datosConfirmados.metadatosAdicionales.temperatura_c),
           densidad_kg_l: Number(datosConfirmados.metadatosAdicionales.densidad_kg_l),
-          usuario_registro: 'Operador Refinería'
+          usuario_registro: 'Operador'
         }]);
 
       if (error) throw error;
@@ -122,12 +111,12 @@ export default function IngresoACP() {
   return (
     <div className="min-h-screen bg-gray-100 p-4">
       <div className="max-w-md mx-auto bg-[#1a1a1a] rounded-3xl shadow-2xl overflow-hidden border-4 border-gray-800">
-        <div className="bg-blue-700 p-6 text-white text-center border-b-4 border-blue-900">
+        <div className="bg-blue-700 p-6 text-white text-center">
           <h1 className="text-xl font-black italic uppercase">Refinería - Ingreso ACP</h1>
         </div>
 
         <div className="p-5 space-y-5">
-          {/* Captura de Imagen */}
+          {/* Cámara */}
           <div className="text-center">
             {fotoUrl ? (
               <div className="relative">
@@ -146,78 +135,53 @@ export default function IngresoACP() {
                 className="w-full h-40 border-4 border-dashed border-gray-700 rounded-2xl flex flex-col items-center justify-center text-gray-500"
               >
                 <span className="text-4xl mb-2">📸</span>
-                <span className="text-xs font-black uppercase tracking-widest">
-                  {loading ? 'Leyendo flujómetro...' : 'Capturar Pantalla'}
-                </span>
+                <span className="text-xs font-black">{loading ? 'ESCANEANDO...' : 'CAPTURAR FLUJÓMETRO'}</span>
               </button>
             )}
-            <input 
-              type="file" 
-              accept="image/*" 
-              capture="environment" 
-              ref={fileInputRef} 
-              id="captura_input"
-              name="captura_input"
-              className="hidden" 
-              onChange={handleCapture} 
-            />
+            <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleCapture} />
           </div>
 
-          {/* VISTA PREVIA TIPO FLUJÓMETRO */}
+          {/* VISTA PREVIA (DISEÑO FLUJÓMETRO) */}
           {datosConfirmados && (
-            <div className="bg-[#0a0a0a] p-5 rounded-xl border-2 border-gray-700 font-mono text-green-500 shadow-inner">
+            <div className="bg-[#0a0a0a] p-5 rounded-xl border-2 border-gray-700 font-mono text-green-500">
               <div className="flex justify-between items-end border-b border-green-900/30 pb-2 mb-3">
                 <span className="text-sm font-bold">ṁ</span>
-                <span className="text-xl">
-                  {datosConfirmados.metadatosAdicionales.masa_kg_h.toFixed(3)}
-                  <span className="text-[10px] ml-1">kg/h</span>
-                </span>
+                <span className="text-xl">{datosConfirmados.metadatosAdicionales.masa_kg_h.toFixed(3)} <span className="text-[10px]">kg/h</span></span>
               </div>
 
-              <div className="py-4">
-                <div className="flex justify-between items-start">
-                  <span className="text-sm font-bold">Σ1</span>
-                  <span className="text-5xl font-black tracking-tighter text-green-400">
-                    {datosConfirmados.valorPrincipal.toLocaleString()}
-                  </span>
-                </div>
-                <div className="text-right text-[10px] mt-1">kg</div>
+              <div className="py-4 flex justify-between items-start">
+                <span className="text-sm font-bold">Σ1</span>
+                <span className="text-5xl font-black tracking-tighter text-green-400">
+                  {datosConfirmados.valorPrincipal.toLocaleString()}
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-4 border-t border-green-900/30 pt-3">
                 <div className="flex flex-col">
-                  <span className="text-[10px] text-green-800 font-bold uppercase">🌡 Temp</span>
-                  <span className="text-lg">
-                    {datosConfirmados.metadatosAdicionales.temperatura_c.toFixed(2)}
-                    <span className="text-xs">°C</span>
-                  </span>
+                  <span className="text-[10px] text-green-800 font-bold">🌡 TEMP</span>
+                  <span className="text-lg">{datosConfirmados.metadatosAdicionales.temperatura_c.toFixed(2)}°C</span>
                 </div>
                 <div className="flex flex-col items-end">
-                  <span className="text-[10px] text-green-800 font-bold uppercase">ρ Dens</span>
-                  <span className="text-lg">
-                    {datosConfirmados.metadatosAdicionales.densidad_kg_l.toFixed(4)}
-                    <span className="text-xs font-sans">kg/l</span>
-                  </span>
+                  <span className="text-[10px] text-green-800 font-bold">ρ DENS</span>
+                  <span className="text-lg">{datosConfirmados.metadatosAdicionales.densidad_kg_l.toFixed(4)}</span>
                 </div>
               </div>
             </div>
           )}
 
           <textarea 
-            id="observaciones"
-            name="observaciones"
             value={observaciones}
             onChange={(e) => setObservaciones(e.target.value)}
-            className="w-full bg-gray-800 rounded-xl p-3 text-white text-xs border-none focus:ring-2 focus:ring-blue-600"
-            placeholder="Observaciones de la carga..."
+            className="w-full bg-gray-800 rounded-xl p-3 text-white text-xs"
+            placeholder="Observaciones..."
           />
 
           <button 
             onClick={handleGuardar}
             disabled={loading || !datosConfirmados}
-            className={`w-full py-4 rounded-xl font-black text-white transition-all ${loading || !datosConfirmados ? 'bg-gray-700' : 'bg-blue-600 hover:bg-blue-500 active:scale-95'}`}
+            className={`w-full py-4 rounded-xl font-black text-white ${loading || !datosConfirmados ? 'bg-gray-700' : 'bg-blue-600 hover:bg-blue-500'}`}
           >
-            {loading ? 'PROCESANDO...' : 'CONFIRMAR Y GUARDAR'}
+            {loading ? 'PROCESANDO...' : 'GUARDAR LECTURA'}
           </button>
         </div>
       </div>
