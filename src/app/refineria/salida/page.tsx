@@ -1,0 +1,210 @@
+﻿'use client';
+import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import Tesseract from 'tesseract.js';
+
+interface DatosFlujometro {
+  valorPrincipal: number;
+  metadatosAdicionales: {
+    masa_kg_h: number;
+    temperatura_c: number;
+    densidad_kg_l: number;
+  };
+}
+
+export default function SalidaRBD() {
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [loading, setLoading] = useState(false);
+  const [fotoUrl, setFotoUrl] = useState<string | null>(null);
+  const [datosConfirmados, setDatosConfirmados] = useState<DatosFlujometro | null>(null);
+  const [observaciones, setObservaciones] = useState('');
+  
+  // MANTENEMOS EL ESTADO DE REPROCESO (Aunque sea salida, sirve para trazabilidad si el lote es recirculado)
+  const [esReproceso, setEsReproceso] = useState(false);
+
+  // 1. CARGAR ESTADO ACTUAL (Sincronizado con la misma tabla de estado global)
+  useEffect(() => {
+    const cargarEstadoGlobal = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('estado_proceso_refineria')
+          .select('en_reproceso')
+          .eq('id', 'GLOBAL_STATUS')
+          .single();
+        
+        if (data) setEsReproceso(data.en_reproceso);
+        if (error) console.error("Error cargando estado:", error);
+      } catch (e) {
+        console.error("Error de conexión");
+      }
+    };
+    cargarEstadoGlobal();
+  }, []);
+
+  const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    try {
+      const fileName = `${Date.now()}_salida_rbd.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('refineria_assets')
+        .upload(fileName, file);
+
+      if (uploadError) throw new Error("Error al subir imagen.");
+
+      const { data: urlData } = supabase.storage
+        .from('refineria_assets')
+        .getPublicUrl(fileName);
+
+      setFotoUrl(urlData.publicUrl);
+      
+      // OCR Local - Idéntico al ingreso para asegurar compatibilidad
+      const result = await Tesseract.recognize(urlData.publicUrl, 'eng');
+      const text = result.data.text;
+      
+      const decimales = text.match(/\d+\.\d+/g) || [];
+      const sumMatch = text.match(/(\d{7,8})/);
+
+      setDatosConfirmados({
+        valorPrincipal: sumMatch ? parseInt(sumMatch[1], 10) : 0,
+        metadatosAdicionales: {
+          masa_kg_h: decimales[0] ? parseFloat(decimales[0]) : 0,
+          temperatura_c: decimales[1] ? parseFloat(decimales[1]) : 0,
+          densidad_kg_l: decimales[2] ? parseFloat(decimales[2]) : 0
+        }
+      });
+      
+    } catch (error: any) {
+      alert("Error: " + error.message);
+      setFotoUrl(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGuardar = async () => {
+    if (!fotoUrl || !datosConfirmados) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('operaciones_refineria')
+        .insert([{
+          tipo_operacion: 'SALIDA_RBD', // CAMBIO CLAVE: Identificador de salida
+          valor_lectura: datosConfirmados.valorPrincipal, 
+          foto_url: fotoUrl,
+          observaciones: observaciones,
+          masa_kg_h: Number(datosConfirmados.metadatosAdicionales.masa_kg_h),
+          temperatura_c: Number(datosConfirmados.metadatosAdicionales.temperatura_c),
+          densidad_kg_l: Number(datosConfirmados.metadatosAdicionales.densidad_kg_l),
+          es_reproceso: esReproceso, 
+          usuario_registro: 'Operador Refinería'
+        }]);
+
+      if (error) throw error;
+      alert("✅ Salida de RBD guardada correctamente.");
+      setFotoUrl(null);
+      setDatosConfirmados(null);
+      setObservaciones('');
+    } catch (error: any) {
+      alert("Error al guardar: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-black p-4">
+      <div className="max-w-md mx-auto bg-[#1a1a1a] rounded-3xl shadow-2xl overflow-hidden border-4 border-gray-800">
+        
+        {/* INDICADOR DE SALIDA - COLOR VERDE PARA DIFERENCIAR */}
+        <div className={`p-6 text-white text-center border-b-4 transition-all duration-500 ${esReproceso ? 'bg-orange-600 border-orange-900 animate-pulse' : 'bg-green-700 border-green-900'}`}>
+          <h2 className="text-xs font-bold uppercase tracking-[0.2em] mb-1 opacity-70">Producto Terminado</h2>
+          <h1 className="text-2xl font-black italic uppercase tracking-tighter">
+             SALIDA RBD
+          </h1>
+          <p className="text-[10px] font-bold mt-1">
+            {esReproceso ? '⚠️ SALIDA DE LOTE EN REPROCESO' : 'REGISTRO DE FLUJO NORMAL'}
+          </p>
+        </div>
+
+        <div className="p-5 space-y-5">
+          
+          {/* INFO DE ESTADO (SOLO LECTURA EN SALIDA) */}
+          <div className="bg-gray-900 p-4 rounded-2xl border border-gray-800 flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="text-white text-[10px] font-bold uppercase">Estado del Sistema:</span>
+              <span className={`text-xs font-black ${esReproceso ? 'text-orange-400' : 'text-green-400'}`}>
+                {esReproceso ? 'REPROCESANDO LOTE' : 'PRODUCCIÓN ESTÁNDAR'}
+              </span>
+            </div>
+            <div className="text-right text-[9px] text-gray-500 font-mono">
+                BALANCE DE MASA <br/> ACTIVO
+            </div>
+          </div>
+
+          {/* CAPTURA */}
+          <div className="text-center">
+            {fotoUrl ? (
+              <div className="relative">
+                <img src={fotoUrl} className={`w-full h-48 object-cover rounded-xl border-2 ${esReproceso ? 'border-orange-500' : 'border-green-500'}`} alt="Captura Salida" />
+                <button onClick={() => { setFotoUrl(null); setDatosConfirmados(null); }} className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-2 text-[10px] font-bold">X</button>
+              </div>
+            ) : (
+              <button onClick={() => fileInputRef.current?.click()} disabled={loading} className="w-full h-32 border-4 border-dashed border-gray-800 rounded-2xl flex flex-col items-center justify-center text-gray-500 hover:text-green-500">
+                <span className="text-4xl mb-1">📸</span>
+                <span className="text-[10px] font-black uppercase tracking-widest">{loading ? 'Procesando...' : 'Capturar Flujómetro Salida'}</span>
+              </button>
+            )}
+            <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleCapture} />
+          </div>
+
+          {/* VISTA PREVIA (ESTILO FLUJÓMETRO - COLOR VERDE) */}
+          {datosConfirmados && (
+            <div className={`bg-[#050505] p-5 rounded-xl border-2 font-mono shadow-inner ${esReproceso ? 'border-orange-900 text-orange-500' : 'border-green-900 text-green-400'}`}>
+              <div className="flex justify-between items-end border-b border-white/5 pb-2 mb-3">
+                <span className="text-xs font-bold italic">ṁ</span>
+                <span className="text-xl">{datosConfirmados.metadatosAdicionales.masa_kg_h.toFixed(3)} <span className="text-[10px]">kg/h</span></span>
+              </div>
+              <div className="py-4 flex justify-between items-start">
+                <span className="text-xs font-bold italic">Σ1</span>
+                <span className="text-5xl font-black tracking-tighter">
+                  {datosConfirmados.valorPrincipal.toLocaleString()}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-3">
+                <div className="flex flex-col">
+                  <span className="text-[10px] opacity-50 uppercase tracking-tighter">🌡 Temperatura</span>
+                  <span className="text-lg">{datosConfirmados.metadatosAdicionales.temperatura_c.toFixed(2)}°C</span>
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="text-[10px] opacity-50 uppercase tracking-tighter">ρ Densidad</span>
+                  <span className="text-lg">{datosConfirmados.metadatosAdicionales.densidad_kg_l.toFixed(4)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <textarea 
+            value={observaciones}
+            onChange={(e) => setObservaciones(e.target.value)}
+            className="w-full bg-gray-900 rounded-xl p-3 text-white text-[10px] border-none focus:ring-1 focus:ring-green-500"
+            placeholder="Observaciones de salida (ej. Tanque destino)..."
+          />
+
+          <button 
+            onClick={handleGuardar}
+            disabled={loading || !datosConfirmados}
+            className={`w-full py-4 rounded-xl font-black text-white text-xs tracking-widest shadow-lg transition-all ${loading || !datosConfirmados ? 'bg-gray-700' : 'bg-green-600 hover:bg-green-500 shadow-green-900/20'}`}
+          >
+            {loading ? 'CARGANDO...' : 'REGISTRAR SALIDA RBD'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
