@@ -1,5 +1,5 @@
 ﻿'use client';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Tesseract from 'tesseract.js';
@@ -22,16 +22,56 @@ export default function IngresoACP() {
   const [datosConfirmados, setDatosConfirmados] = useState<DatosFlujometro | null>(null);
   const [observaciones, setObservaciones] = useState('');
   
-  // ESTADO DE REPROCESO
+  // ESTADO PERSISTENTE EN BASE DE DATOS
   const [esReproceso, setEsReproceso] = useState(false);
+
+  // 1. CARGAR ESTADO ACTUAL AL ENTRAR A LA APP
+  useEffect(() => {
+    const cargarEstadoGlobal = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('estado_proceso_refineria')
+          .select('en_reproceso')
+          .eq('id', 'GLOBAL_STATUS')
+          .single();
+        
+        if (data) setEsReproceso(data.en_reproceso);
+        if (error) console.error("Error cargando estado:", error);
+      } catch (e) {
+        console.error("Error de conexión");
+      }
+    };
+    cargarEstadoGlobal();
+  }, []);
+
+  // 2. FUNCIÓN PARA CAMBIAR EL MODO (Sincronizado con Supabase)
+  const toggleReproceso = async () => {
+    const nuevoEstado = !esReproceso;
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('estado_proceso_refineria')
+        .upsert({ 
+          id: 'GLOBAL_STATUS', 
+          en_reproceso: nuevoEstado, 
+          actualizado_el: new Date(),
+          usuario_que_cambio: 'Operador Refinería'
+        });
+      
+      if (error) throw error;
+      setEsReproceso(nuevoEstado);
+    } catch (e: any) {
+      alert("Error al actualizar estado global: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setLoading(true);
-    setDatosConfirmados(null);
-
     try {
       const fileName = `${Date.now()}_acp.jpg`;
       const { error: uploadError } = await supabase.storage
@@ -44,23 +84,22 @@ export default function IngresoACP() {
         .from('refineria_assets')
         .getPublicUrl(fileName);
 
-      const publicUrl = urlData.publicUrl;
-      setFotoUrl(publicUrl);
+      setFotoUrl(urlData.publicUrl);
       
-      const result = await Tesseract.recognize(publicUrl, 'eng');
+      // OCR Local
+      const result = await Tesseract.recognize(urlData.publicUrl, 'eng');
       const text = result.data.text;
-
+      
       const decimales = text.match(/\d+\.\d+/g) || [];
       const sumMatch = text.match(/(\d{7,8})/);
-      const sumatoria = sumMatch ? parseInt(sumMatch[1], 10) : 0;
-
-      const masa = decimales[0] ? parseFloat(decimales[0]) : 0;
-      const temp = decimales[1] ? parseFloat(decimales[1]) : 0;
-      const dens = decimales[2] ? parseFloat(decimales[2]) : 0;
 
       setDatosConfirmados({
-        valorPrincipal: sumatoria,
-        metadatosAdicionales: { masa_kg_h: masa, temperatura_c: temp, densidad_kg_l: dens }
+        valorPrincipal: sumMatch ? parseInt(sumMatch[1], 10) : 0,
+        metadatosAdicionales: {
+          masa_kg_h: decimales[0] ? parseFloat(decimales[0]) : 0,
+          temperatura_c: decimales[1] ? parseFloat(decimales[1]) : 0,
+          densidad_kg_l: decimales[2] ? parseFloat(decimales[2]) : 0
+        }
       });
       
     } catch (error: any) {
@@ -85,14 +124,12 @@ export default function IngresoACP() {
           masa_kg_h: Number(datosConfirmados.metadatosAdicionales.masa_kg_h),
           temperatura_c: Number(datosConfirmados.metadatosAdicionales.temperatura_c),
           densidad_kg_l: Number(datosConfirmados.metadatosAdicionales.densidad_kg_l),
-          es_reproceso: esReproceso, // ENVIAMOS EL ESTADO ACTUAL
+          es_reproceso: esReproceso, // Guarda el estado global
           usuario_registro: 'Operador Refinería'
         }]);
 
       if (error) throw error;
-      alert(esReproceso ? "⚠️ Lectura de REPROCESO guardada" : "✅ Lectura NORMAL guardada");
-      
-      // Limpiamos solo la lectura, mantenemos el estado de reproceso si estaba activo
+      alert("Lectura guardada correctamente.");
       setFotoUrl(null);
       setDatosConfirmados(null);
       setObservaciones('');
@@ -104,66 +141,72 @@ export default function IngresoACP() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4">
+    <div className="min-h-screen bg-black p-4">
       <div className="max-w-md mx-auto bg-[#1a1a1a] rounded-3xl shadow-2xl overflow-hidden border-4 border-gray-800">
         
-        {/* Header dinámico según el estado */}
-        <div className={`p-6 text-white text-center border-b-4 transition-colors ${esReproceso ? 'bg-orange-600 border-orange-800' : 'bg-blue-700 border-blue-900'}`}>
-          <h1 className="text-xl font-black italic uppercase">
-            {esReproceso ? '⚠️ MODO REPROCESO ACTIVADO' : 'REFINERÍA - PROCESO NORMAL'}
+        {/* INDICADOR DE ESTADO GLOBAL */}
+        <div className={`p-6 text-white text-center border-b-4 transition-all duration-500 ${esReproceso ? 'bg-red-600 border-red-900 animate-pulse' : 'bg-blue-700 border-blue-900'}`}>
+          <h1 className="text-xl font-black italic uppercase tracking-tighter">
+            {esReproceso ? '⚠️ MODO REPROCESO' : 'PROCESO NORMAL'}
           </h1>
+          <p className="text-[10px] opacity-80 mt-1 font-bold">ESTADO SINCRONIZADO PARA TODA LA PLANTA</p>
         </div>
 
         <div className="p-5 space-y-5">
           
-          {/* CONTROL DE MODO REPROCESO */}
-          <div className="bg-gray-800 p-4 rounded-2xl flex items-center justify-between border border-gray-700">
-            <div>
-              <p className="text-white font-bold text-sm">Estado del Proceso</p>
-              <p className="text-gray-400 text-[10px] uppercase">¿Esta lectura es reproceso?</p>
+          {/* SWITCH DE REPROCESO */}
+          <div className="bg-gray-900 p-4 rounded-2xl border border-gray-800 flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="text-white text-xs font-bold uppercase">Estado:</span>
+              <span className={`text-[10px] font-black ${esReproceso ? 'text-red-400' : 'text-blue-400'}`}>
+                {esReproceso ? 'RECIRCULANDO' : 'CARGA NUEVA'}
+              </span>
             </div>
             <button 
-              onClick={() => setEsReproceso(!esReproceso)}
-              className={`px-4 py-2 rounded-lg font-black text-xs transition-all ${esReproceso ? 'bg-orange-500 text-white animate-pulse' : 'bg-gray-700 text-gray-400'}`}
+              onClick={toggleReproceso}
+              disabled={loading}
+              className={`px-4 py-2 rounded-xl font-black text-[10px] transition-all ${esReproceso ? 'bg-red-500 text-white border-b-4 border-red-800' : 'bg-gray-800 text-gray-400 border-b-4 border-gray-950'}`}
             >
-              {esReproceso ? 'SÍ, REPROCESO' : 'NO, NORMAL'}
+              {esReproceso ? 'TERMINAR REPROCESO' : 'CAMBIAR A REPROCESO'}
             </button>
           </div>
 
+          {/* CAPTURA */}
           <div className="text-center">
             {fotoUrl ? (
               <div className="relative">
-                <img src={fotoUrl} className={`w-full h-48 object-cover rounded-xl border-2 ${esReproceso ? 'border-orange-500' : 'border-blue-500'}`} />
-                <button onClick={() => { setFotoUrl(null); setDatosConfirmados(null); }} className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-2 text-[10px] font-bold">REPETIR</button>
+                <img src={fotoUrl} className={`w-full h-48 object-cover rounded-xl border-2 ${esReproceso ? 'border-red-500' : 'border-blue-500'}`} alt="Captura" />
+                <button onClick={() => { setFotoUrl(null); setDatosConfirmados(null); }} className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-2 text-[10px] font-bold">X</button>
               </div>
             ) : (
-              <button onClick={() => fileInputRef.current?.click()} disabled={loading} className="w-full h-40 border-4 border-dashed border-gray-700 rounded-2xl flex flex-col items-center justify-center text-gray-500 hover:text-blue-400 transition-colors">
-                <span className="text-4xl mb-2">📸</span>
-                <span className="text-xs font-black uppercase">{loading ? 'Procesando...' : 'Capturar Flujómetro'}</span>
+              <button onClick={() => fileInputRef.current?.click()} disabled={loading} className="w-full h-32 border-4 border-dashed border-gray-800 rounded-2xl flex flex-col items-center justify-center text-gray-500 hover:text-blue-500">
+                <span className="text-4xl mb-1">📸</span>
+                <span className="text-[10px] font-black uppercase tracking-widest">{loading ? 'Procesando...' : 'Capturar Flujómetro'}</span>
               </button>
             )}
             <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleCapture} />
           </div>
 
+          {/* VISTA PREVIA (ESTILO FLUJÓMETRO) */}
           {datosConfirmados && (
-            <div className={`bg-[#0a0a0a] p-5 rounded-xl border-2 font-mono shadow-inner ${esReproceso ? 'border-orange-900 text-orange-500' : 'border-gray-700 text-green-500'}`}>
+            <div className={`bg-[#050505] p-5 rounded-xl border-2 font-mono shadow-inner ${esReproceso ? 'border-red-900 text-red-500' : 'border-green-900 text-green-500'}`}>
               <div className="flex justify-between items-end border-b border-white/5 pb-2 mb-3">
-                <span className="text-sm font-bold italic">ṁ</span>
+                <span className="text-xs font-bold italic">ṁ</span>
                 <span className="text-xl">{datosConfirmados.metadatosAdicionales.masa_kg_h.toFixed(3)} <span className="text-[10px]">kg/h</span></span>
               </div>
               <div className="py-4 flex justify-between items-start">
-                <span className="text-sm font-bold italic">Σ1</span>
-                <span className={`text-5xl font-black tracking-tighter ${esReproceso ? 'text-orange-400' : 'text-green-400'}`}>
-                    {datosConfirmados.valorPrincipal.toLocaleString()}
+                <span className="text-xs font-bold italic">Σ1</span>
+                <span className={`text-5xl font-black tracking-tighter ${esReproceso ? 'text-red-400' : 'text-green-400'}`}>
+                  {datosConfirmados.valorPrincipal.toLocaleString()}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-3">
                 <div className="flex flex-col">
-                  <span className="text-[10px] opacity-50 font-bold uppercase">🌡 Temp</span>
+                  <span className="text-[10px] opacity-50 uppercase">🌡 Temp</span>
                   <span className="text-lg">{datosConfirmados.metadatosAdicionales.temperatura_c.toFixed(2)}°C</span>
                 </div>
                 <div className="flex flex-col items-end">
-                  <span className="text-[10px] opacity-50 font-bold uppercase">ρ Dens</span>
+                  <span className="text-[10px] opacity-50 uppercase">ρ Dens</span>
                   <span className="text-lg">{datosConfirmados.metadatosAdicionales.densidad_kg_l.toFixed(4)}</span>
                 </div>
               </div>
@@ -173,16 +216,16 @@ export default function IngresoACP() {
           <textarea 
             value={observaciones}
             onChange={(e) => setObservaciones(e.target.value)}
-            className="w-full bg-gray-800 rounded-xl p-3 text-white text-xs border-none focus:ring-2 focus:ring-blue-600"
-            placeholder={esReproceso ? "Indique motivo del reproceso..." : "Observaciones..."}
+            className="w-full bg-gray-900 rounded-xl p-3 text-white text-[10px] border-none focus:ring-1 focus:ring-blue-500"
+            placeholder={esReproceso ? "Indique por qué es reproceso..." : "Observaciones..."}
           />
 
           <button 
             onClick={handleGuardar}
             disabled={loading || !datosConfirmados}
-            className={`w-full py-4 rounded-xl font-black text-white transition-all ${loading || !datosConfirmados ? 'bg-gray-700' : esReproceso ? 'bg-orange-600 hover:bg-orange-500' : 'bg-blue-600 hover:bg-blue-500'}`}
+            className={`w-full py-4 rounded-xl font-black text-white text-xs tracking-widest shadow-lg ${esReproceso ? 'bg-red-600 shadow-red-900/20' : 'bg-blue-600 shadow-blue-900/20'}`}
           >
-            {loading ? 'GUARDANDO...' : esReproceso ? 'GUARDAR COMO REPROCESO' : 'GUARDAR LECTURA'}
+            {loading ? 'CARGANDO...' : esReproceso ? 'REGISTRAR REPROCESO' : 'REGISTRAR LECTURA NORMAL'}
           </button>
         </div>
       </div>
