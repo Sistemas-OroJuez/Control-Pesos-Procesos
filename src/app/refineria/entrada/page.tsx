@@ -2,7 +2,6 @@
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-// Importamos Tesseract para procesamiento local
 import Tesseract from 'tesseract.js';
 
 interface DatosFlujometro {
@@ -12,9 +11,7 @@ interface DatosFlujometro {
     temperatura_c: number;
     densidad_kg_l: number;
   };
-  debug?: string;
   version_test?: string;
-  error?: string;
 }
 
 export default function IngresoACP() {
@@ -35,12 +32,11 @@ export default function IngresoACP() {
 
     try {
       const fileName = `${Date.now()}_acp.jpg`;
-      
       const { error: uploadError } = await supabase.storage
         .from('refineria_assets')
         .upload(fileName, file);
 
-      if (uploadError) throw new Error("Error al subir la imagen a Supabase.");
+      if (uploadError) throw new Error("Error al subir imagen.");
 
       const { data: urlData } = supabase.storage
         .from('refineria_assets')
@@ -49,38 +45,35 @@ export default function IngresoACP() {
       const publicUrl = urlData.publicUrl;
       setFotoUrl(publicUrl);
       
-      // --- NUEVA LÓGICA: OCR LOCAL CON TESSERACT ---
-      const result = await Tesseract.recognize(
-        publicUrl,
-        'eng', // Inglés es más rápido y preciso para números puros
-        { 
-          logger: m => console.log(m.status, m.progress) 
-        }
-      );
-
+      // CONFIGURACIÓN OCR
+      const result = await Tesseract.recognize(publicUrl, 'eng');
       const text = result.data.text;
-      console.log("Texto detectado:", text);
 
-      // Buscamos la sumatoria de 7 u 8 dígitos (tu lógica original)
-      const sumatoriaMatch = text.match(/(\d{7,8})/);
-      const sumatoria = sumatoriaMatch ? parseFloat(sumatoriaMatch[1]) : 0;
+      // 1. Extraer Sumatoria (7-8 dígitos) - Forzamos ENTERO
+      const sumMatch = text.match(/(\d{7,8})/);
+      const sumatoria = sumMatch ? parseInt(sumMatch[1], 10) : 0;
 
-      if (!sumatoria || sumatoria === 0) {
-        throw new Error("No se pudo extraer la sumatoria. Intente una foto más nítida y centrada en los números.");
-      }
+      // 2. Extraer Masa (ṁ) - Busca número antes de kg/h
+      const masaMatch = text.match(/(\d+\.\d+)\s*kg\/h/i);
+      const masa = masaMatch ? parseFloat(masaMatch[1]) : 0;
 
-      const datosLeidos: DatosFlujometro = {
+      // 3. Extraer Temperatura (🌡) - Busca número antes de °C
+      const tempMatch = text.match(/(\d+\.\d+)\s*°C/i);
+      const temp = tempMatch ? parseFloat(tempMatch[1]) : 0;
+
+      // 4. Extraer Densidad (ρ) - Busca número antes de kg/l
+      const densMatch = text.match(/(\d+\.\d+)\s*kg\/l/i);
+      const densidad = densMatch ? parseFloat(densMatch[1]) : 0;
+
+      setDatosConfirmados({
         valorPrincipal: sumatoria,
         metadatosAdicionales: {
-          masa_kg_h: 0,
-          temperatura_c: 0,
-          densidad_kg_l: 0
+          masa_kg_h: masa,
+          temperatura_c: temp,
+          densidad_kg_l: densidad
         },
-        version_test: "TESSERACT_LOCAL_V1"
-      };
-      
-      setDatosConfirmados(datosLeidos);
-      // ----------------------------------------------
+        version_test: "TESSERACT_FULL_SYNC"
+      });
       
     } catch (error: any) {
       alert(error.message);
@@ -92,7 +85,6 @@ export default function IngresoACP() {
 
   const handleGuardar = async () => {
     if (!fotoUrl || !datosConfirmados) return;
-
     setLoading(true);
     try {
       const { error } = await supabase
@@ -102,104 +94,100 @@ export default function IngresoACP() {
           valor_lectura: datosConfirmados.valorPrincipal, 
           foto_url: fotoUrl,
           observaciones: observaciones,
-          metadata: {
-            ...datosConfirmados.metadatosAdicionales
-          }, 
-          usuario_registro: 'Operador Refinería'
+          // Columnas nuevas en Supabase
+          masa_kg_h: datosConfirmados.metadatosAdicionales.masa_kg_h,
+          temperatura_c: datosConfirmados.metadatosAdicionales.temperatura_c,
+          densidad_kg_l: datosConfirmados.metadatosAdicionales.densidad_kg_l,
+          usuario_registro: 'Operador'
         }]);
 
       if (error) throw error;
-
       alert("✅ Registro guardado con éxito.");
       router.push('/dashboard'); 
     } catch (error: any) {
-      alert("Error al guardar: " + error.message);
+      alert("Error: " + error.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-md mx-auto bg-white rounded-3xl shadow-xl overflow-hidden border">
-        <div className="bg-blue-600 p-8 text-white text-center">
-          <h1 className="text-2xl font-black uppercase italic">Ingreso ACP</h1>
-          <p className="text-sm font-bold mt-1 text-blue-100">Lectura de Flujómetro</p>
-          <p className="text-[10px] font-bold opacity-70 tracking-[0.3em] mt-2">LECTURA AUTOMÁTICA OCR</p>
+    <div className="min-h-screen bg-gray-100 p-4">
+      <div className="max-w-md mx-auto bg-[#1a1a1a] rounded-3xl shadow-2xl overflow-hidden border-4 border-gray-800">
+        <div className="bg-blue-700 p-6 text-white text-center border-b-4 border-blue-900">
+          <h1 className="text-xl font-black italic tracking-tighter">REFINERÍA - INGRESO ACP</h1>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-5 space-y-5">
+          {/* Cámara / Preview */}
           <div className="text-center">
             {fotoUrl ? (
-              <div className="relative">
-                <img src={fotoUrl} className="w-full h-56 object-contain rounded-2xl bg-black" alt="Captura" />
-                {!loading && (
-                  <button 
-                    onClick={() => { setFotoUrl(null); setDatosConfirmados(null); }}
-                    className="absolute -top-3 -right-3 bg-red-600 text-white rounded-full p-3 shadow-xl font-bold text-xs"
-                  >
-                    REPETIR
-                  </button>
-                )}
+              <div className="relative group">
+                <img src={fotoUrl} className="w-full h-48 object-cover rounded-xl border-2 border-blue-500" alt="Captura" />
+                <button 
+                  onClick={() => { setFotoUrl(null); setDatosConfirmados(null); }}
+                  className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white font-bold transition-all"
+                >
+                  CAMBIAR FOTO
+                </button>
               </div>
             ) : (
               <button 
                 onClick={() => fileInputRef.current?.click()}
                 disabled={loading}
-                className="w-full h-48 border-4 border-dashed rounded-3xl flex flex-col items-center justify-center text-gray-400"
+                className="w-full h-40 border-4 border-dashed border-gray-700 rounded-2xl flex flex-col items-center justify-center text-gray-500 hover:border-blue-500 hover:text-blue-500 transition-colors"
               >
-                <span className="text-5xl mb-2">📸</span>
-                <span className="font-bold text-xs uppercase tracking-widest">
-                  {loading ? 'Procesando lectura...' : 'Capturar Flujómetro'}
-                </span>
+                <span className="text-4xl mb-2">📸</span>
+                <span className="text-xs font-black tracking-widest">{loading ? 'ESCANEANDO...' : 'CAPTURAR PANTALLA'}</span>
               </button>
             )}
-            {/* Se agregaron ID y Name para corregir el error de accesibilidad */}
-            <input 
-              type="file" 
-              accept="image/*" 
-              capture="environment" 
-              ref={fileInputRef} 
-              id="captura_ocr"
-              name="captura_ocr"
-              className="hidden" 
-              onChange={handleCapture} 
-            />
+            <input type="file" accept="image/*" capture="environment" ref={fileInputRef} id="ocr_input" name="ocr_input" className="hidden" onChange={handleCapture} />
           </div>
 
+          {/* PANTALLA TIPO FLUJÓMETRO */}
           {datosConfirmados && (
-            <div className="bg-gray-900 text-green-400 p-6 rounded-2xl font-mono shadow-2xl border-4 border-gray-800 animate-pulse-slow">
-              <p className="text-[9px] text-gray-500 mb-1 uppercase tracking-widest font-sans">Sumatoria (∑1) detectada:</p>
-              <p className="text-4xl font-bold mb-4">{datosConfirmados.valorPrincipal.toLocaleString()}</p>
-              
-              <div className="grid grid-cols-2 gap-2 text-[10px] border-t border-gray-700 pt-4">
-                <div>
-                  <p className="text-gray-500 uppercase">Masa (ṁ)</p>
-                  <p className="text-white text-sm">{datosConfirmados.metadatosAdicionales.masa_kg_h} kg/h</p>
+            <div className="bg-[#0a0a0a] p-5 rounded-xl border-2 border-gray-700 font-mono text-green-500 shadow-inner">
+              <div className="flex justify-between items-end border-b border-green-900/30 pb-2 mb-3">
+                <span className="text-[10px] text-green-800 font-sans font-bold">ṁ</span>
+                <span className="text-xl">{datosConfirmados.metadatosAdicionales.masa_kg_h.toFixed(3)} <span className="text-[10px]">kg/h</span></span>
+              </div>
+
+              <div className="py-4">
+                <div className="flex justify-between items-start">
+                  <span className="text-xs text-green-800 font-sans font-bold">Σ1</span>
+                  <span className="text-5xl font-black tracking-tighter text-green-400">
+                    {datosConfirmados.valorPrincipal.toLocaleString()}
+                  </span>
                 </div>
-                <div>
-                  <p className="text-gray-500 uppercase">Temp (🌡)</p>
-                  <p className="text-white text-sm">{datosConfirmados.metadatosAdicionales.temperatura_c} °C</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 border-t border-green-900/30 pt-3">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-green-800 font-sans font-bold">🌡 TEMP</span>
+                  <span className="text-lg">{datosConfirmados.metadatosAdicionales.temperatura_c.toFixed(2)}<span className="text-xs">°C</span></span>
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="text-[10px] text-green-800 font-sans font-bold">ρ DENS</span>
+                  <span className="text-lg">{datosConfirmados.metadatosAdicionales.densidad_kg_l.toFixed(4)}<span className="text-xs">kg/l</span></span>
                 </div>
               </div>
             </div>
           )}
 
           <textarea 
-            id="observaciones"
-            name="observaciones"
+            id="obs" name="obs"
             value={observaciones}
             onChange={(e) => setObservaciones(e.target.value)}
-            className="w-full bg-gray-50 rounded-xl p-4 text-xs border outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Observaciones opcionales..."
+            className="w-full bg-gray-800 rounded-xl p-3 text-white text-xs border-none focus:ring-2 focus:ring-blue-600"
+            placeholder="Observaciones de la carga..."
           />
 
           <button 
             onClick={handleGuardar}
             disabled={loading || !datosConfirmados}
-            className={`w-full py-5 rounded-2xl font-black text-white transition-all ${loading || !datosConfirmados ? 'bg-gray-300' : 'bg-blue-600 shadow-blue-200 shadow-2xl active:scale-95'}`}
+            className={`w-full py-4 rounded-xl font-black text-white ${loading || !datosConfirmados ? 'bg-gray-700 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/20'}`}
           >
-            {loading ? 'ESPERE...' : 'CONFIRMAR Y SUBIR'}
+            {loading ? 'PROCESANDO...' : 'GUARDAR LECTURA'}
           </button>
         </div>
       </div>
