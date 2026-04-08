@@ -36,7 +36,7 @@ export default function Dashboard() {
     }
   };
 
-  // Definición de módulos de la aplicación (Lista actualizada con Reportes Refinería)
+  // Definición de módulos de la aplicación (Tu lista original con categorías)
   const allModules = [
     // EXTRACTORA
     { id: 3, category: 'extractora', name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', adminOnly: false },
@@ -49,10 +49,6 @@ export default function Dashboard() {
     { id: 11, category: 'refineria', name: 'Salida RBD', icon: '🟢', color: 'bg-emerald-600 text-white', route: '/refineria/salida', adminOnly: false },
     { id: 13, category: 'refineria', name: 'Salida Ácido Graso', icon: '🟡', color: 'bg-amber-500 text-white', route: '/refineria/acido', adminOnly: false },
     { id: 14, category: 'refineria', name: 'Inventario DS3 / Proceso', icon: '📦', color: 'bg-slate-500 text-white', route: '/refineria/inventario', adminOnly: false },
-    
-    // BOTÓN DE REPORTES REFINERÍA AGREGADO
-    { id: 15, category: 'refineria', name: 'Auditoría y Reportes', icon: '📈', color: 'bg-white text-gray-800 border-2 border-gray-200', route: '/refineria/reportes', adminOnly: false },
-    
     { id: 12, category: 'refineria', name: 'Cierre de Balance', icon: '🏭', color: 'bg-slate-900 text-white', route: '/refineria/gestion', adminOnly: true },
 
     // GENERALES (Se muestran en el "Home" si es admin)
