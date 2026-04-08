@@ -36,7 +36,7 @@ export default function Dashboard() {
     }
   };
 
-  // Definición de módulos de la aplicación (Lista actualizada con Reportes Refinería y Configuración de Lectores)
+  // Definición de módulos de la aplicación (Lista actualizada con Reportes Refinería)
   const allModules = [
     // EXTRACTORA
     { id: 3, category: 'extractora', name: 'Proceso de Pesado', icon: '⚖️', color: 'bg-red-700 text-white', route: '/proceso', adminOnly: false },
@@ -50,17 +50,14 @@ export default function Dashboard() {
     { id: 13, category: 'refineria', name: 'Salida Ácido Graso', icon: '🟡', color: 'bg-amber-500 text-white', route: '/refineria/acido', adminOnly: false },
     { id: 14, category: 'refineria', name: 'Inventario DS3 / Proceso', icon: '📦', color: 'bg-slate-500 text-white', route: '/refineria/inventario', adminOnly: false },
     
-    // BOTÓN DE REPORTES REFINERÍA
+    // BOTÓN DE REPORTES REFINERÍA AGREGADO
     { id: 15, category: 'refineria', name: 'Auditoría y Reportes', icon: '📈', color: 'bg-white text-gray-800 border-2 border-gray-200', route: '/refineria/reportes', adminOnly: false },
     
     { id: 12, category: 'refineria', name: 'Cierre de Balance', icon: '🏭', color: 'bg-slate-900 text-white', route: '/refineria/gestion', adminOnly: true },
 
-    // GENERALES (Configuración Global)
+    // GENERALES (Se muestran en el "Home" si es admin)
     { id: 2, category: 'general', name: 'Parámetros del Sistema', icon: '⚙️', color: 'bg-white text-gray-800', route: '/parametros', adminOnly: true },
     { id: 1, category: 'general', name: 'Administración y Usuarios', icon: '👥', color: 'bg-white text-gray-800', route: '/admin', adminOnly: true },
-    
-    // NUEVO BOTÓN: GESTIÓN DE LECTORES MÁSICOS
-    { id: 16, category: 'general', name: 'Configurar Lectores (IDs)', icon: '🆔', color: 'bg-blue-50 text-blue-900 border-2 border-blue-200', route: '/admin/equipos', adminOnly: true },
   ];
 
   // Filtrar según categoría activa y permisos
@@ -104,6 +101,8 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-6xl mx-auto p-6 md:p-12">
+        
+        {/* VISTA PRINCIPAL: SELECCIÓN DE ÁREA */}
         {activeView === 'principal' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-10">
             <button
@@ -124,6 +123,7 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* VISTA DE SUB-MÓDULOS */}
         {activeView !== 'principal' && (
           <div>
             <button 
@@ -148,10 +148,11 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* BOTONES GENERALES DE ADMIN (Solo aparecen en el principal si es admin) */}
         {isAdmin && activeView === 'principal' && (
           <div className="mt-12 border-t border-gray-200 pt-10">
             <p className="text-center text-gray-400 font-bold text-[10px] tracking-[0.4em] uppercase mb-8">Configuración Global</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl mx-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto">
               {allModules.filter(m => m.category === 'general').map((mod) => (
                 <button
                   key={mod.id}
