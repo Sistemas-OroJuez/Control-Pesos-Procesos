@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     if (!fotoUrl) throw new Error("No hay imagen");
 
     // Inicializar el trabajador de forma más eficiente
-    worker = await createWorker('spa', 1, {
+    worker = await createWorker('eng', 1, {
       logger: m => console.log(m.status, m.progress), // Ver progreso en los logs de Vercel
     });
 
