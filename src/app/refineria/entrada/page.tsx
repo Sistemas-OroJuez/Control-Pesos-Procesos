@@ -10,7 +10,6 @@ interface DatosFlujometro {
     temperatura_c: number;
     densidad_kg_l: number;
   };
-  // Campos nuevos para diagnóstico
   debug?: string;
   version_test?: string;
   error?: string;
@@ -35,7 +34,6 @@ export default function IngresoACP() {
     try {
       const fileName = `${Date.now()}_acp.jpg`;
       
-      // 1. Subida a Supabase
       const { error: uploadError } = await supabase.storage
         .from('refineria_assets')
         .upload(fileName, file);
@@ -49,7 +47,6 @@ export default function IngresoACP() {
       const publicUrl = urlData.publicUrl;
       setFotoUrl(publicUrl);
       
-      // 2. Llamada al OCR con DETECTOR DE ERRORES MEJORADO
       const ocrResponse = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -58,17 +55,15 @@ export default function IngresoACP() {
 
       const datosLeidos: DatosFlujometro = await ocrResponse.json();
 
-      // SI LA API RESPONDE CON ERROR (400, 500, etc.)
       if (!ocrResponse.ok) {
         throw new Error(
           `❌ ERROR MOTOR OCR\n` +
           `Mensaje: ${datosLeidos.error || 'Fallo desconocido'}\n` +
           `Debug: ${datosLeidos.debug || 'Sin detalles'}\n` +
-          `Versión: ${datosLeidos.version_test || 'ANTIGUA (No actualizó)'}`
+          `Versión: ${datosLeidos.version_test || 'ANTIGUA'}`
         );
       }
       
-      // Validamos que se haya leído la sumatoria
       if (!datosLeidos.valorPrincipal || datosLeidos.valorPrincipal === 0) {
         throw new Error("No se pudo extraer la sumatoria. Intente una foto más nítida.");
       }
@@ -76,7 +71,6 @@ export default function IngresoACP() {
       setDatosConfirmados(datosLeidos);
       
     } catch (error: any) {
-      // Este alert ahora será mucho más informativo
       alert(error.message);
       setFotoUrl(null);
     } finally {
@@ -96,7 +90,9 @@ export default function IngresoACP() {
           valor_lectura: datosConfirmados.valorPrincipal, 
           foto_url: fotoUrl,
           observaciones: observaciones,
-          metadata: datosConfirmados.metadatosAdicionales, 
+          metadata: {
+            ...datosConfirmados.metadatosAdicionales
+          }, 
           usuario_registro: 'Operador Refinería'
         }]);
 
@@ -116,7 +112,9 @@ export default function IngresoACP() {
       <div className="max-w-md mx-auto bg-white rounded-3xl shadow-xl overflow-hidden border">
         <div className="bg-blue-600 p-8 text-white text-center">
           <h1 className="text-2xl font-black uppercase italic">Ingreso ACP</h1>
-          <p className="text-[10px] font-bold opacity-70 tracking-[0.3em]">LECTURA AUTOMÁTICA OCR</p>
+          {/* Nuevo texto solicitado */}
+          <p className="text-sm font-bold mt-1 text-blue-100">Lectura de Flujómetro</p>
+          <p className="text-[10px] font-bold opacity-70 tracking-[0.3em] mt-2">LECTURA AUTOMÁTICA OCR</p>
         </div>
 
         <div className="p-6 space-y-6">
