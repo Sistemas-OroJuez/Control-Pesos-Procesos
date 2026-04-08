@@ -2,6 +2,8 @@
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+// Importamos Tesseract para procesamiento local
+import Tesseract from 'tesseract.js';
 
 interface DatosFlujometro {
   valorPrincipal: number;
@@ -47,28 +49,38 @@ export default function IngresoACP() {
       const publicUrl = urlData.publicUrl;
       setFotoUrl(publicUrl);
       
-      const ocrResponse = await fetch('/api/ocr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fotoUrl: publicUrl }),
-      });
+      // --- NUEVA LÓGICA: OCR LOCAL CON TESSERACT ---
+      const result = await Tesseract.recognize(
+        publicUrl,
+        'eng', // Inglés es más rápido y preciso para números puros
+        { 
+          logger: m => console.log(m.status, m.progress) 
+        }
+      );
 
-      const datosLeidos: DatosFlujometro = await ocrResponse.json();
+      const text = result.data.text;
+      console.log("Texto detectado:", text);
 
-      if (!ocrResponse.ok) {
-        throw new Error(
-          `❌ ERROR MOTOR OCR\n` +
-          `Mensaje: ${datosLeidos.error || 'Fallo desconocido'}\n` +
-          `Debug: ${datosLeidos.debug || 'Sin detalles'}\n` +
-          `Versión: ${datosLeidos.version_test || 'ANTIGUA'}`
-        );
+      // Buscamos la sumatoria de 7 u 8 dígitos (tu lógica original)
+      const sumatoriaMatch = text.match(/(\d{7,8})/);
+      const sumatoria = sumatoriaMatch ? parseFloat(sumatoriaMatch[1]) : 0;
+
+      if (!sumatoria || sumatoria === 0) {
+        throw new Error("No se pudo extraer la sumatoria. Intente una foto más nítida y centrada en los números.");
       }
+
+      const datosLeidos: DatosFlujometro = {
+        valorPrincipal: sumatoria,
+        metadatosAdicionales: {
+          masa_kg_h: 0,
+          temperatura_c: 0,
+          densidad_kg_l: 0
+        },
+        version_test: "TESSERACT_LOCAL_V1"
+      };
       
-      if (!datosLeidos.valorPrincipal || datosLeidos.valorPrincipal === 0) {
-        throw new Error("No se pudo extraer la sumatoria. Intente una foto más nítida.");
-      }
-
       setDatosConfirmados(datosLeidos);
+      // ----------------------------------------------
       
     } catch (error: any) {
       alert(error.message);
@@ -112,7 +124,6 @@ export default function IngresoACP() {
       <div className="max-w-md mx-auto bg-white rounded-3xl shadow-xl overflow-hidden border">
         <div className="bg-blue-600 p-8 text-white text-center">
           <h1 className="text-2xl font-black uppercase italic">Ingreso ACP</h1>
-          {/* Nuevo texto solicitado */}
           <p className="text-sm font-bold mt-1 text-blue-100">Lectura de Flujómetro</p>
           <p className="text-[10px] font-bold opacity-70 tracking-[0.3em] mt-2">LECTURA AUTOMÁTICA OCR</p>
         </div>
@@ -143,7 +154,17 @@ export default function IngresoACP() {
                 </span>
               </button>
             )}
-            <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleCapture} />
+            {/* Se agregaron ID y Name para corregir el error de accesibilidad */}
+            <input 
+              type="file" 
+              accept="image/*" 
+              capture="environment" 
+              ref={fileInputRef} 
+              id="captura_ocr"
+              name="captura_ocr"
+              className="hidden" 
+              onChange={handleCapture} 
+            />
           </div>
 
           {datosConfirmados && (
@@ -165,6 +186,8 @@ export default function IngresoACP() {
           )}
 
           <textarea 
+            id="observaciones"
+            name="observaciones"
             value={observaciones}
             onChange={(e) => setObservaciones(e.target.value)}
             className="w-full bg-gray-50 rounded-xl p-4 text-xs border outline-none focus:ring-2 focus:ring-blue-500"
