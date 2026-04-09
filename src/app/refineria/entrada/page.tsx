@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 
 const BUCKET_NAME = 'refineria_assets'; 
 const IA_ENDPOINT = "https://orojuezsa-lector-ocr-industrial.hf.space/upload";
+const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
 
 export default function LectorIndustrial() {
   const [loading, setLoading] = useState(false);
@@ -12,7 +13,7 @@ export default function LectorIndustrial() {
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Recuperar estado al recargar
+  // Recuperar estado para no perder el proceso si se refresca la página
   useEffect(() => {
     const savedTicket = localStorage.getItem('last_ticket_id');
     const savedFoto = localStorage.getItem('last_foto_url');
@@ -20,7 +21,7 @@ export default function LectorIndustrial() {
     if (savedFoto) setFotoUrl(savedFoto);
   }, []);
 
-  // Escuchar respuesta de la IA en tiempo real
+  // Escuchar cambios en la base de datos (Realtime)
   useEffect(() => {
     if (!ticketId) return;
 
@@ -40,6 +41,9 @@ export default function LectorIndustrial() {
             setLoading(false);
             setTicketId(null);
             localStorage.removeItem('last_ticket_id');
+          } else if (payload.new.status === 'error') {
+            alert("Error: La IA no pudo procesar la imagen.");
+            cancelarProceso();
           }
       }).subscribe();
 
@@ -52,14 +56,17 @@ export default function LectorIndustrial() {
     setLoading(true);
 
     try {
+      // 1. Subir al Storage (Bucket refineria_assets)
       const fileName = `${Date.now()}.jpg`; 
       const { error: uploadError } = await supabase.storage.from(BUCKET_NAME).upload(fileName, file);
       if (uploadError) throw uploadError;
 
+      // 2. Obtener URL pública para auditoría
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
       setFotoUrl(publicUrl);
       localStorage.setItem('last_foto_url', publicUrl);
 
+      // 3. Enviar a Hugging Face
       const formData = new FormData();
       formData.append('file', file);
       const res = await fetch(IA_ENDPOINT, { method: "POST", body: formData });
@@ -69,39 +76,58 @@ export default function LectorIndustrial() {
       localStorage.setItem('last_ticket_id', iaData.ticket_id);
 
     } catch (err: any) {
-      alert("Error: " + err.message);
+      alert("Error en el proceso: " + err.message);
       setLoading(false);
     }
   };
 
+  const cancelarProceso = () => {
+    setTicketId(null);
+    setFotoUrl(null);
+    setLoading(false);
+    localStorage.clear();
+  };
+
   return (
-    <div className="min-h-screen bg-black text-white p-4 font-sans uppercase">
+    <div className="min-h-screen bg-black text-white p-4 font-sans uppercase tracking-tight">
       <div className="max-w-md mx-auto space-y-6">
         
-        <header className="flex justify-between items-center py-4 border-b border-white/10">
-          <button onClick={() => window.location.href='/dashboard_principal'} className="text-zinc-500">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" strokeWidth="2.5"/></svg>
+        <header className="flex justify-between items-center py-4 border-b border-white/10 relative">
+          {/* BOTÓN SALIR CORREGIDO A DASHBOARD */}
+          <button onClick={() => window.location.href = DASHBOARD_URL} className="text-zinc-500 p-2 active:text-white transition-colors">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path d="M15 19l-7-7 7-7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </button>
-          <h1 className="text-blue-500 font-bold text-[10px] tracking-widest">INGRESO ACP</h1>
+          
+          <h1 className="text-blue-500 font-black text-[10px] tracking-[0.2em] w-full text-center">
+            REFINERÍA OROJUEZ - IA
+          </h1>
           <div className="w-10"></div>
         </header>
 
         {!datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
             
-            {/* Solo mostramos el Link, no la imagen pesada */}
+            {/* Solo enlace para evitar carga de datos pesada */}
             {fotoUrl && (
-              <a href={fotoUrl} target="_blank" className="mb-8 bg-blue-600/20 text-blue-400 border border-blue-600/30 px-6 py-3 rounded-2xl text-[10px] font-black flex items-center gap-2 animate-pulse">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" strokeWidth="2"/></svg>
-                VER EVIDENCIA SUBIDA
-              </a>
+              <div className="mb-8 text-center animate-in fade-in duration-500">
+                <a 
+                  href={fotoUrl} 
+                  target="_blank" 
+                  className="bg-zinc-800 text-blue-400 border border-white/10 px-5 py-3 rounded-2xl text-[9px] font-black flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" strokeWidth="2"/></svg>
+                  VER CAPTURA EN BUCKET
+                </a>
+              </div>
             )}
 
             <button 
               onClick={() => fileInputRef.current?.click()}
               disabled={loading || !!ticketId} 
               className={`w-28 h-28 rounded-full flex items-center justify-center transition-all ${
-                ticketId ? 'bg-zinc-900' : 'bg-blue-600 shadow-2xl shadow-blue-900/40'
+                ticketId ? 'bg-zinc-900' : 'bg-blue-600 shadow-2xl shadow-blue-900/40 active:scale-95'
               }`}
             >
               {ticketId ? (
@@ -111,30 +137,41 @@ export default function LectorIndustrial() {
               )}
             </button>
             
-            <p className="mt-10 text-zinc-500 text-[11px] font-black text-center leading-relaxed">
-              {ticketId ? "LA IA ESTÁ ANALIZANDO LOS DATOS...\nESTA PANTALLA SE ACTUALIZARÁ SOLA." : "TOME UNA FOTO DEL MEDIDOR"}
-            </p>
+            <div className="mt-10 text-center space-y-4">
+              <p className="text-zinc-600 text-[10px] font-black leading-relaxed tracking-widest">
+                {ticketId 
+                  ? "SISTEMA PROCESANDO...\nESPERANDO RESPUESTA DEL LECTOR." 
+                  : "CAPTURE LA PANTALLA DEL MEDIDOR"}
+              </p>
 
-            {ticketId && (
-               <button onClick={() => {setTicketId(null); setFotoUrl(null); localStorage.clear();}} className="mt-8 text-red-500 text-[10px] font-black border border-red-500/20 px-8 py-3 rounded-full">
-                 CANCELAR PROCESO
-               </button>
-            )}
+              {ticketId && (
+                <button 
+                  onClick={cancelarProceso}
+                  className="px-6 py-2 bg-red-900/10 text-red-500 border border-red-900/30 rounded-full text-[9px] font-black active:bg-red-900/30"
+                >
+                  ANULAR ESPERA
+                </button>
+              )}
+            </div>
           </div>
         ) : (
-          <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-8 shadow-2xl">
+          /* PANTALLA DE RESULTADOS */
+          <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-8 animate-in zoom-in duration-300 shadow-2xl">
             <div className="flex justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/5">
               <span className="text-[10px] text-zinc-500 font-black">TAG: {datos.tag}</span>
-              <a href={fotoUrl || '#'} target="_blank" className="text-blue-500 text-[10px] font-black underline">LINK EVIDENCIA</a>
+              <a href={fotoUrl || '#'} target="_blank" className="text-blue-500 text-[9px] font-black underline underline-offset-4">EVIDENCIA</a>
             </div>
 
-            <div className="text-center py-6">
-              <p className="text-[12px] text-zinc-500 font-bold mb-2 tracking-widest">TOTALIZADOR</p>
-              <p className="text-8xl font-black text-green-500 tracking-tighter">{datos.totalizador}</p>
+            <div className="text-center py-6 border-y border-white/5">
+              <p className="text-[11px] text-zinc-500 font-bold mb-2 tracking-[0.3em]">TOTALIZADOR</p>
+              <p className="text-8xl font-black text-green-500 tracking-tighter tabular-nums">{datos.totalizador}</p>
             </div>
 
-            <button onClick={() => {setDatos(null); setFotoUrl(null);}} className="w-full py-6 bg-blue-600 rounded-3xl font-black text-sm tracking-widest active:scale-95 transition-all">
-              FINALIZAR REGISTRO
+            <button 
+              onClick={() => {setDatos(null); setFotoUrl(null);}} 
+              className="w-full py-6 bg-blue-600 rounded-3xl font-black text-xs tracking-widest shadow-xl shadow-blue-900/20 active:scale-95 transition-all"
+            >
+              ACEPTAR Y FINALIZAR
             </button>
           </div>
         )}
