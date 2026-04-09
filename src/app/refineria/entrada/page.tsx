@@ -13,7 +13,7 @@ export default function LectorIndustrial() {
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Recuperar estado para no perder el proceso si se refresca la página
+  // 1. PERSISTENCIA
   useEffect(() => {
     const savedTicket = localStorage.getItem('last_ticket_id');
     const savedFoto = localStorage.getItem('last_foto_url');
@@ -21,7 +21,7 @@ export default function LectorIndustrial() {
     if (savedFoto) setFotoUrl(savedFoto);
   }, []);
 
-  // Escuchar cambios en la base de datos (Realtime)
+  // 2. REALTIME (Escuchar respuesta de Supabase)
   useEffect(() => {
     if (!ticketId) return;
 
@@ -30,6 +30,7 @@ export default function LectorIndustrial() {
       .on('postgres_changes', { 
           event: 'UPDATE', schema: 'public', table: 'lecturas_ia', filter: `id=eq.${ticketId}` 
       }, (payload) => {
+          console.log("Cambio detectado:", payload.new);
           if (payload.new.status === 'completado') {
             setDatos({
               tag: payload.new.tag_id,
@@ -40,9 +41,9 @@ export default function LectorIndustrial() {
             });
             setLoading(false);
             setTicketId(null);
-            localStorage.removeItem('last_ticket_id');
+            localStorage.clear();
           } else if (payload.new.status === 'error') {
-            alert("Error: La IA no pudo procesar la imagen.");
+            alert("La IA no pudo procesar esta foto. Intente con otra toma.");
             cancelarProceso();
           }
       }).subscribe();
@@ -56,27 +57,41 @@ export default function LectorIndustrial() {
     setLoading(true);
 
     try {
-      // 1. Subir al Storage (Bucket refineria_assets)
+      // SUBIDA AL BUCKET
       const fileName = `${Date.now()}.jpg`; 
       const { error: uploadError } = await supabase.storage.from(BUCKET_NAME).upload(fileName, file);
       if (uploadError) throw uploadError;
 
-      // 2. Obtener URL pública para auditoría
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
       setFotoUrl(publicUrl);
       localStorage.setItem('last_foto_url', publicUrl);
 
-      // 3. Enviar a Hugging Face
+      // LLAMADA A HUGGING FACE CON TIMEOUT DE SEGURIDAD
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 minuto máximo
+
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch(IA_ENDPOINT, { method: "POST", body: formData });
+      
+      const res = await fetch(IA_ENDPOINT, { 
+        method: "POST", 
+        body: formData,
+        signal: controller.signal 
+      });
+
+      clearTimeout(timeoutId);
       const iaData = await res.json();
       
-      setTicketId(iaData.ticket_id);
-      localStorage.setItem('last_ticket_id', iaData.ticket_id);
+      if(iaData.ticket_id) {
+        setTicketId(iaData.ticket_id);
+        localStorage.setItem('last_ticket_id', iaData.ticket_id);
+      } else {
+        throw new Error("La IA no devolvió un Ticket ID");
+      }
 
     } catch (err: any) {
-      alert("Error en el proceso: " + err.message);
+      const msg = err.name === 'AbortError' ? "El servidor de IA tardó demasiado." : err.message;
+      alert("ERROR: " + msg);
       setLoading(false);
     }
   };
@@ -90,88 +105,56 @@ export default function LectorIndustrial() {
 
   return (
     <div className="min-h-screen bg-black text-white p-4 font-sans uppercase tracking-tight">
-      <div className="max-w-md mx-auto space-y-6">
+      <div className="max-w-md mx-auto">
         
-        <header className="flex justify-between items-center py-4 border-b border-white/10 relative">
-          {/* BOTÓN SALIR CORREGIDO A DASHBOARD */}
-          <button onClick={() => window.location.href = DASHBOARD_URL} className="text-zinc-500 p-2 active:text-white transition-colors">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path d="M15 19l-7-7 7-7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+        <header className="flex justify-between items-center py-6 border-b border-white/10">
+          <button onClick={() => window.location.href = DASHBOARD_URL} className="text-zinc-500">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" strokeWidth="2.5"/></svg>
           </button>
-          
-          <h1 className="text-blue-500 font-black text-[10px] tracking-[0.2em] w-full text-center">
-            REFINERÍA OROJUEZ - IA
-          </h1>
+          <span className="text-blue-500 font-black text-[10px] tracking-widest">REFINERÍA OROJUEZ</span>
           <div className="w-10"></div>
         </header>
 
         {!datos ? (
-          <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
-            
-            {/* Solo enlace para evitar carga de datos pesada */}
+          <div className="mt-10 flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/10">
             {fotoUrl && (
-              <div className="mb-8 text-center animate-in fade-in duration-500">
-                <a 
-                  href={fotoUrl} 
-                  target="_blank" 
-                  className="bg-zinc-800 text-blue-400 border border-white/10 px-5 py-3 rounded-2xl text-[9px] font-black flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" strokeWidth="2"/></svg>
-                  VER CAPTURA EN BUCKET
-                </a>
-              </div>
+              <a href={fotoUrl} target="_blank" className="mb-8 text-blue-400 text-[9px] font-black underline underline-offset-4">
+                FOTO EN CLOUD (OK)
+              </a>
             )}
 
             <button 
               onClick={() => fileInputRef.current?.click()}
               disabled={loading || !!ticketId} 
-              className={`w-28 h-28 rounded-full flex items-center justify-center transition-all ${
-                ticketId ? 'bg-zinc-900' : 'bg-blue-600 shadow-2xl shadow-blue-900/40 active:scale-95'
+              className={`w-24 h-24 rounded-full flex items-center justify-center transition-all ${
+                ticketId ? 'bg-zinc-800 animate-pulse' : 'bg-blue-600 shadow-2xl shadow-blue-900/40'
               }`}
             >
               {ticketId ? (
-                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
               ) : (
-                <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" strokeWidth="2"/></svg>
+                <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" strokeWidth="2"/></svg>
               )}
             </button>
             
-            <div className="mt-10 text-center space-y-4">
-              <p className="text-zinc-600 text-[10px] font-black leading-relaxed tracking-widest">
-                {ticketId 
-                  ? "SISTEMA PROCESANDO TOMARA ENTRE 5 Y 10 MIN...\nESPERANDO RESPUESTA DEL LECTOR." 
-                  : "CAPTURE LA PANTALLA DEL MEDIDOR"}
-              </p>
+            <p className="mt-10 text-zinc-600 text-[10px] font-black text-center leading-relaxed">
+              {ticketId ? "ESPERANDO DATOS DEL LECTOR...\nESTO TOMA DE 10 A 30 SEGUNDOS." : "PRESIONE PARA CAPTURAR"}
+            </p>
 
-              {ticketId && (
-                <button 
-                  onClick={cancelarProceso}
-                  className="px-6 py-2 bg-red-900/10 text-red-500 border border-red-900/30 rounded-full text-[9px] font-black active:bg-red-900/30"
-                >
-                  ANULAR ESPERA
-                </button>
-              )}
-            </div>
+            {ticketId && (
+              <button onClick={cancelarProceso} className="mt-8 text-red-500 text-[9px] font-black border border-red-500/20 px-6 py-2 rounded-full">
+                ANULAR Y REINTENTAR
+              </button>
+            )}
           </div>
         ) : (
-          /* PANTALLA DE RESULTADOS */
-          <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-8 animate-in zoom-in duration-300 shadow-2xl">
-            <div className="flex justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/5">
-              <span className="text-[10px] text-zinc-500 font-black">TAG: {datos.tag}</span>
-              <a href={fotoUrl || '#'} target="_blank" className="text-blue-500 text-[9px] font-black underline underline-offset-4">EVIDENCIA</a>
+          <div className="mt-10 bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-8 animate-in zoom-in duration-300">
+            <div className="text-center">
+              <p className="text-[10px] text-zinc-500 font-bold mb-2">TOTALIZADOR LEÍDO</p>
+              <p className="text-7xl font-black text-green-500 tracking-tighter tabular-nums">{datos.totalizador}</p>
             </div>
-
-            <div className="text-center py-6 border-y border-white/5">
-              <p className="text-[11px] text-zinc-500 font-bold mb-2 tracking-[0.3em]">TOTALIZADOR</p>
-              <p className="text-8xl font-black text-green-500 tracking-tighter tabular-nums">{datos.totalizador}</p>
-            </div>
-
-            <button 
-              onClick={() => {setDatos(null); setFotoUrl(null);}} 
-              className="w-full py-6 bg-blue-600 rounded-3xl font-black text-xs tracking-widest shadow-xl shadow-blue-900/20 active:scale-95 transition-all"
-            >
-              ACEPTAR Y FINALIZAR
+            <button onClick={() => {setDatos(null); setFotoUrl(null);}} className="w-full py-6 bg-blue-600 rounded-3xl font-black text-xs tracking-widest shadow-xl shadow-blue-900/20 active:scale-95 transition-all">
+              REGISTRAR LECTURA
             </button>
           </div>
         )}
