@@ -140,7 +140,7 @@ export default function LectorIndustrial() {
             <div className="mt-10 text-center space-y-4">
               <p className="text-zinc-600 text-[10px] font-black leading-relaxed tracking-widest">
                 {ticketId 
-                  ? "SISTEMA PROCESANDO...\nESPERANDO RESPUESTA DEL LECTOR." 
+                  ? "SISTEMA PROCESANDO TOMARA ENTRE 5 Y 10 MIN...\nESPERANDO RESPUESTA DEL LECTOR." 
                   : "CAPTURE LA PANTALLA DEL MEDIDOR"}
               </p>
 
