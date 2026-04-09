@@ -2,7 +2,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
-// CONFIGURACIÓN DE NOMBRES
 const BUCKET_NAME = 'refineria_assets'; 
 const IA_ENDPOINT = "https://orojuezsa-lector-ocr-industrial.hf.space/upload";
 
@@ -13,7 +12,6 @@ export default function LectorIndustrial() {
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. PERSISTENCIA: Recuperar estado si se refresca la pantalla
   useEffect(() => {
     const savedTicket = localStorage.getItem('last_ticket_id');
     const savedFoto = localStorage.getItem('last_foto_url');
@@ -21,10 +19,8 @@ export default function LectorIndustrial() {
     if (savedFoto) setFotoUrl(savedFoto);
   }, []);
 
-  // 2. REALTIME: Escuchar cuando la IA termine
   useEffect(() => {
     if (!ticketId) return;
-
     const channel = supabase
       .channel(`seguimiento-${ticketId}`)
       .on('postgres_changes', { 
@@ -43,29 +39,27 @@ export default function LectorIndustrial() {
             localStorage.removeItem('last_ticket_id');
           }
       }).subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [ticketId]);
 
-  // 3. CAPTURA Y PROCESAMIENTO
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setLoading(true);
 
     try {
-      // SUBIR AL BUCKET CORRECTO
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `lecturas/${fileName}`;
+      // 1. NOMBRE DE ARCHIVO (Sin carpetas extrañas para evitar bloqueos de políticas)
+      const fileName = `${Date.now()}.jpg`; 
+      const filePath = fileName; // Lo subimos a la raíz del bucket para probar
 
+      // 2. SUBIDA
       const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
         .upload(filePath, file);
 
-      if (uploadError) throw new Error(`Error en Storage: ${uploadError.message}`);
+      if (uploadError) throw new Error(`Error Supabase: ${uploadError.message}`);
 
-      // URL Pública para el operador y la IA
+      // 3. GENERAR URL
       const { data: { publicUrl } } = supabase.storage
         .from(BUCKET_NAME)
         .getPublicUrl(filePath);
@@ -73,29 +67,19 @@ export default function LectorIndustrial() {
       setFotoUrl(publicUrl);
       localStorage.setItem('last_foto_url', publicUrl);
 
-      // Enviar a la IA
+      // 4. ENVIAR A IA
       const formData = new FormData();
       formData.append('file', file);
 
       const res = await fetch(IA_ENDPOINT, { method: "POST", body: formData });
-      const data = await res.json();
+      const iaData = await res.json();
       
-      setTicketId(data.ticket_id);
-      localStorage.setItem('last_ticket_id', data.ticket_id);
+      setTicketId(iaData.ticket_id);
+      localStorage.setItem('last_ticket_id', iaData.ticket_id);
 
     } catch (err: any) {
-      alert("Error de conexión: " + err.message);
+      alert("ERROR: " + err.message);
       setLoading(false);
-    }
-  };
-
-  const cancelarEspera = () => {
-    if (confirm("¿Cancelar espera?")) {
-      setTicketId(null);
-      setFotoUrl(null);
-      setLoading(false);
-      localStorage.removeItem('last_ticket_id');
-      localStorage.removeItem('last_foto_url');
     }
   };
 
@@ -105,23 +89,20 @@ export default function LectorIndustrial() {
         
         <header className="flex justify-between items-center py-4 border-b border-white/10">
           <button onClick={() => window.location.href='/dashboard_principal'} className="text-zinc-500 p-2">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" strokeWidth="2.5"/></svg>
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" strokeWidth="2.5" strokeLinecap="round"/></svg>
           </button>
-          <h1 className="text-blue-500 font-bold text-[10px] tracking-widest">Ingreso ACP IA</h1>
-          <div className="w-10"></div>
+          <h1 className="text-blue-500 font-bold text-[10px] tracking-widest text-center w-full">REFINERÍA OROJUEZ</h1>
         </header>
 
         {!datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-8 bg-zinc-900/20">
             
             {fotoUrl && (
-              <div className="mb-8 text-center">
-                <div className="relative inline-block">
-                  <img src={fotoUrl} className="w-40 h-40 object-cover rounded-3xl border-2 border-blue-600/20 shadow-2xl" alt="Preview" />
-                  <a href={fotoUrl} target="_blank" className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-zinc-800 text-[8px] px-3 py-1 rounded-full font-black border border-white/10 flex items-center gap-2">
-                    VER EN BUCKET
-                  </a>
-                </div>
+              <div className="mb-8 text-center animate-in fade-in duration-500">
+                <img src={fotoUrl} className="w-40 h-40 object-cover rounded-3xl border-2 border-blue-600/40" alt="Preview" />
+                <a href={fotoUrl} target="_blank" className="mt-4 inline-flex items-center gap-2 bg-blue-600 px-4 py-2 rounded-full text-[9px] font-black shadow-lg">
+                   VER FOTO EN CLOUD
+                </a>
               </div>
             )}
 
@@ -129,7 +110,7 @@ export default function LectorIndustrial() {
               onClick={() => fileInputRef.current?.click()}
               disabled={loading || !!ticketId} 
               className={`w-24 h-24 rounded-full flex items-center justify-center transition-all ${
-                (loading || ticketId) ? 'bg-zinc-900' : 'bg-blue-600 shadow-xl shadow-blue-900/40 active:scale-90'
+                (loading || ticketId) ? 'bg-zinc-800' : 'bg-blue-600 shadow-xl shadow-blue-900/40 active:scale-95'
               }`}
             >
               {ticketId ? (
@@ -139,41 +120,28 @@ export default function LectorIndustrial() {
               )}
             </button>
             
-            <div className="mt-8 text-center space-y-4">
-              <p className="text-zinc-600 text-[10px] font-black">
-                {ticketId ? "IA ANALIZANDO...\nLOS DATOS SE GUARDARÁN AL TERMINAR." : "ESCANEAR VISOR"}
-              </p>
-              {ticketId && (
-                <button onClick={cancelarEspera} className="px-5 py-2 bg-red-900/10 text-red-500 border border-red-900/30 rounded-full text-[9px] font-black">
-                  Cancelar proceso
-                </button>
-              )}
-            </div>
+            <p className="mt-8 text-zinc-500 text-[10px] font-black text-center leading-relaxed">
+              {ticketId ? "LA IA ESTÁ ANALIZANDO LOS DATOS...\nEL PROCESO SEGUIRÁ AUNQUE SALGAS." : "CAPTURE LECTURA"}
+            </p>
+
+            {ticketId && (
+               <button onClick={() => {setTicketId(null); setFotoUrl(null); localStorage.clear();}} className="mt-6 text-red-500 text-[9px] font-black border border-red-500/20 px-6 py-2 rounded-full">
+                 CANCELAR Y NUEVA FOTO
+               </button>
+            )}
           </div>
         ) : (
+          /* RESULTADOS */
           <div className="bg-zinc-900 rounded-[40px] p-6 border border-white/5 space-y-6">
             <div className="flex justify-between items-center bg-white/5 p-4 rounded-2xl">
-              <span className="text-[10px] text-zinc-500 font-black tracking-widest">TAG: {datos.tag}</span>
-              <a href={fotoUrl || '#'} target="_blank" className="text-blue-500 text-[9px] font-black underline">FOTO EVIDENCIA</a>
+              <span className="text-[10px] text-zinc-500 font-black">TAG: {datos.tag}</span>
+              <a href={fotoUrl || '#'} target="_blank" className="text-blue-500 text-[9px] font-black underline">FOTO ORIGINAL</a>
             </div>
-
-            <div className="text-center py-4">
-              <p className="text-[10px] text-zinc-500 font-bold mb-2 tracking-widest">TOTALIZADOR</p>
-              <p className="text-7xl font-black text-green-500 tracking-tighter">{datos.totalizador}</p>
+            <div className="text-center py-4 border-y border-white/5">
+              <p className="text-[10px] text-zinc-500 font-bold mb-2">TOTALIZADOR</p>
+              <p className="text-7xl font-black text-green-500 tracking-tighter tabular-nums">{datos.totalizador}</p>
             </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { l: 'MASA', v: datos.masa }, { l: 'TEMP', v: datos.temp }, { l: 'DENS', v: datos.dens }
-              ].map((it, i) => (
-                <div key={i} className="bg-white/5 p-4 rounded-2xl border border-white/5 text-center">
-                  <p className="text-[8px] text-zinc-500 mb-1 font-black">{it.l}</p>
-                  <p className="text-xs font-black">{it.v}</p>
-                </div>
-              ))}
-            </div>
-
-            <button onClick={() => {setDatos(null); setFotoUrl(null);}} className="w-full py-5 bg-blue-600 rounded-3xl font-black text-xs tracking-widest shadow-xl shadow-blue-900/20 active:scale-95 transition-all">
+            <button onClick={() => {setDatos(null); setFotoUrl(null);}} className="w-full py-5 bg-blue-600 rounded-3xl font-black text-xs tracking-[0.2em]">
               CONFIRMAR REGISTRO
             </button>
           </div>
