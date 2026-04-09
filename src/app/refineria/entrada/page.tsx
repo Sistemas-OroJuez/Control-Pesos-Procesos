@@ -1,56 +1,11 @@
 ﻿'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
-interface DatosConfirmados {
-  tag: string;
-  nombre?: string;
-  totalizador: string;
-  masa: string;
-  temp: string;
-  dens: string;
-}
-
-export default function LectorIndustrialIA() {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+export default function LectorIndustrial() {
   const [loading, setLoading] = useState(false);
-  const [datosConfirmados, setDatosConfirmados] = useState<DatosConfirmados | null>(null);
-  const [esReproceso, setEsReproceso] = useState(false);
-
-  const IA_URL = "https://orojuezsa-lector-ocr-industrial.hf.space/ocr";
-
-  useEffect(() => {
-    const cargarEstadoGlobal = async () => {
-      const { data } = await supabase
-        .from('estado_proceso_refineria')
-        .select('en_reproceso')
-        .eq('id', 'GLOBAL_STATUS')
-        .single();
-      if (data) setEsReproceso(data.en_reproceso);
-    };
-    cargarEstadoGlobal();
-  }, []);
-
-  // FUNCIÓN CRÍTICA: Separa los números si vienen pegados
-  const procesarLecturaSucia = (data: any) => {
-    let valores = data.valores || ["0", "0", "0", "0"];
-    
-    // Si el totalizador es un número gigante (ruido de OCR), intentamos limpiar
-    let total = valores[0];
-    if (total.length > 8) {
-        // En tus fotos, el totalizador real suele ser la parte central
-        // Intentamos extraer un número coherente de 7 dígitos
-        const match = total.match(/\d{7}/);
-        total = match ? match[0] : total.slice(-7);
-    }
-
-    return {
-      totalizador: total,
-      masa: valores[1] || "0",
-      temp: valores[2] || "0",
-      dens: valores[3] || "0"
-    };
-  };
+  const [datos, setDatos] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -61,117 +16,145 @@ export default function LectorIndustrialIA() {
     formData.append('file', file);
 
     try {
-      const response = await fetch(IA_URL, { method: "POST", body: formData });
-      const data = await response.json();
+      console.log("--- INICIANDO CAPTURA ---");
+      // Asegúrate de que esta URL sea la de tu Space actual
+      const res = await fetch("https://tu-usuario-lector-ocr.hf.space/ocr", {
+        method: "POST",
+        body: formData,
+      });
+
       const data = await res.json();
-      console.log("Datos recibidos de la IA:", data); // Esto te dirá qué está llegando realmente
+      
+      // ==========================================
+      // DEBUG LOG: Aquí verás qué responde la IA
+      console.log("RESPUESTA CRUDA DEL SERVIDOR:", data);
+      // ==========================================
 
-      const lecturaLimpia = procesarLecturaSucia(data);
+      if (data.error) {
+        console.error("Error reportado por el servidor IA:", data.error);
+        alert("La IA respondió con un error técnico.");
+      }
 
-      const { data: equipos } = await supabase.from('cat_equipos').select('*');
-      const tagID = data.tag_id || "No detectado";
-      const equipo = equipos?.find(eq => tagID.includes(eq.tag_id));
-
-      setDatosConfirmados({
-        tag: equipo ? equipo.tag_id : tagID,
-        nombre: equipo?.nombre || "Equipo no identificado",
-        ...lecturaLimpia
+      // Mapeamos los datos recibidos al estado
+      setDatos({
+        tag: data.tag_id || "No detectado",
+        totalizador: data.valores?.[0] || "0",
+        masa: data.valores?.[1] || "0",
+        temp: data.valores?.[2] || "0",
+        dens: data.valores?.[3] || "0",
+        original: data // Guardamos todo por si acaso
       });
 
     } catch (err) {
-      alert("Error en la lectura de IA");
+      console.error("ERROR DE CONEXIÓN:", err);
+      alert("No se pudo conectar con el servidor de IA.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGuardar = async () => {
-    if (!datosConfirmados) return;
+  const guardarEnDB = async () => {
+    if (!datos) return;
     setLoading(true);
     try {
       const { error } = await supabase.from('operaciones_refineria').insert([{
-        tipo_operacion: 'INGRESO_ACP',
-        valor_lectura: parseFloat(datosConfirmados.totalizador),
-        masa_kg_h: parseFloat(datosConfirmados.masa),
-        temperatura_c: parseFloat(datosConfirmados.temp),
-        densidad_kg_l: parseFloat(datosConfirmados.dens),
-        es_reproceso: esReproceso
+        valor_lectura: parseFloat(datos.totalizador),
+        masa_kg_h: parseFloat(datos.masa),
+        temperatura_c: parseFloat(datos.temp),
+        densidad_kg_l: parseFloat(datos.dens),
+        observaciones: `Registro IA - Tag: ${datos.tag}`
       }]);
+      
       if (error) throw error;
-      alert("✅ Guardado");
-      setDatosConfirmados(null);
+      alert("✅ Datos guardados correctamente");
+      setDatos(null);
     } catch (e: any) {
-      alert("Error: " + e.message);
+      console.error("Error al guardar en Supabase:", e);
+      alert("Error de base de datos: " + e.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-black p-4 text-white flex flex-col items-center justify-center font-sans">
-      <div className="w-full max-w-md bg-[#0f0f0f] rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
+    <div className="min-h-screen bg-black text-white p-4 font-sans">
+      <div className="max-w-md mx-auto space-y-6">
         
-        <header className={`p-6 text-center ${esReproceso ? 'bg-red-900/20' : 'bg-blue-900/20'}`}>
-          <h1 className="text-xl font-black tracking-tighter uppercase">Oro Juez IA</h1>
-          <p className="text-[9px] font-bold opacity-50 tracking-widest">MONITOR DE FLUJO MÁSICO</p>
+        <header className="text-center py-4">
+          <h1 className="text-blue-500 font-bold tracking-widest text-sm uppercase">Sistema de Lectura Coriolis</h1>
         </header>
 
-        <div className="p-6 space-y-4">
-          {!datosConfirmados ? (
+        {!datos ? (
+          <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-800 rounded-3xl p-12 bg-zinc-900/50">
             <button 
-              onClick={() => fileInputRef.current?.click()} 
-              className="w-full h-56 border-2 border-dashed border-white/10 rounded-[2rem] bg-white/[0.02] flex flex-col items-center justify-center"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              className={`w-24 h-24 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-900/20 active:scale-95 transition-all ${loading ? 'animate-pulse opacity-50' : ''}`}
             >
-              <span className="text-5xl mb-3">{loading ? '⏳' : '📸'}</span>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-blue-400">
-                {loading ? 'Procesando...' : 'Escanear Panel'}
-              </p>
+              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
             </button>
-          ) : (
-            <div className="space-y-4">
-              <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                <p className="text-[8px] text-blue-400 font-bold uppercase mb-1">TAG Detectado</p>
-                <p className="text-md font-mono font-bold">{datosConfirmados.tag}</p>
-              </div>
+            <p className="mt-4 text-gray-500 text-xs font-medium uppercase tracking-tighter">
+              {loading ? "Analizando pantalla..." : "Tocar para escanear panel"}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-zinc-900 border border-white/10 rounded-3xl p-6 space-y-4 animate-in fade-in slide-in-from-bottom-4">
+            <div className="flex justify-between items-center border-b border-white/5 pb-2">
+              <span className="text-[10px] text-gray-500 uppercase">Equipo Detectado</span>
+              <span className="text-blue-400 font-bold text-sm">{datos.tag}</span>
+            </div>
 
-              <div className="bg-green-500/10 p-5 rounded-3xl border border-green-500/20 text-center">
-                <p className="text-[9px] text-green-400 font-bold uppercase mb-1">Totalizador (Σ1)</p>
-                <p className="text-5xl font-black text-green-400 tracking-tighter">
-                  {datosConfirmados.totalizador}
-                </p>
-              </div>
+            <div className="text-center py-4">
+              <p className="text-[10px] text-gray-500 uppercase">Totalizador</p>
+              <p className="text-5xl font-black text-green-500 tracking-tighter">
+                {datos.totalizador !== "0" ? datos.totalizador : "---"}
+              </p>
+            </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <div className="bg-white/5 p-3 rounded-xl text-center">
-                  <p className="text-[8px] text-gray-500 font-bold uppercase">Masa</p>
-                  <p className="text-sm font-bold">{datosConfirmados.masa}</p>
-                </div>
-                <div className="bg-white/5 p-3 rounded-xl text-center">
-                  <p className="text-[8px] text-orange-400 font-bold uppercase">Temp</p>
-                  <p className="text-sm font-bold">{datosConfirmados.temp}°</p>
-                </div>
-                <div className="bg-white/5 p-3 rounded-xl text-center">
-                  <p className="text-[8px] text-purple-400 font-bold uppercase">Dens</p>
-                  <p className="text-sm font-bold">{datosConfirmados.dens}</p>
-                </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-white/5 p-3 rounded-2xl text-center">
+                <p className="text-[8px] text-gray-500 uppercase">Masa</p>
+                <p className="font-bold text-sm">{datos.masa}</p>
               </div>
+              <div className="bg-white/5 p-3 rounded-2xl text-center">
+                <p className="text-[8px] text-gray-500 uppercase">Temp</p>
+                <p className="font-bold text-sm">{datos.temp}</p>
+              </div>
+              <div className="bg-white/5 p-3 rounded-2xl text-center">
+                <p className="text-[8px] text-gray-500 uppercase">Dens</p>
+                <p className="font-bold text-sm">{datos.dens}</p>
+              </div>
+            </div>
 
-              <button onClick={() => setDatosConfirmados(null)} className="w-full text-[10px] text-gray-500 font-bold py-2">
-                ← REPETIR CAPTURA
+            <div className="flex flex-col gap-2 pt-4">
+              <button 
+                onClick={guardarEnDB}
+                className="w-full py-4 bg-blue-600 hover:bg-blue-500 rounded-2xl font-bold text-sm transition-colors"
+              >
+                CONFIRMAR REGISTRO
+              </button>
+              <button 
+                onClick={() => setDatos(null)}
+                className="w-full py-2 text-xs text-gray-500 font-medium"
+              >
+                CANCELAR Y REPETIR
               </button>
             </div>
-          )}
+          </div>
+        )}
 
-          <input type="file" accept="image/*" capture="environment" ref={fileInputRef} className="hidden" onChange={handleCapture} />
-
-          <button 
-            onClick={handleGuardar}
-            disabled={!datosConfirmados || loading}
-            className="w-full py-5 bg-blue-600 rounded-3xl font-bold text-xs tracking-widest uppercase disabled:opacity-20"
-          >
-            Confirmar y Guardar
-          </button>
-        </div>
+        {/* Input oculto para activar la cámara */}
+        <input 
+          type="file" 
+          accept="image/*" 
+          capture="environment" 
+          ref={fileInputRef} 
+          onChange={handleCapture} 
+          className="hidden" 
+        />
       </div>
     </div>
   );
