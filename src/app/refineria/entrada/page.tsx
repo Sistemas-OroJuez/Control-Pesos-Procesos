@@ -63,6 +63,8 @@ export default function LectorIndustrialIA() {
     try {
       const response = await fetch(IA_URL, { method: "POST", body: formData });
       const data = await response.json();
+      const data = await res.json();
+      console.log("Datos recibidos de la IA:", data); // Esto te dirá qué está llegando realmente
 
       const lecturaLimpia = procesarLecturaSucia(data);
 
