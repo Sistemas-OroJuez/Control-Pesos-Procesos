@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 const BUCKET_NAME = 'refineria_assets'; 
 const IA_ENDPOINT = "https://orojuezsa-lector-ocr-industrial.hf.space/upload";
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
+const TELEFONO_JEFE = "593987654321"; // Configura el número real aquí
 
 export default function LectorIndustrial() {
   const [loading, setLoading] = useState(false);
@@ -49,18 +50,32 @@ export default function LectorIndustrial() {
     setLoading(true);
 
     try {
-      // 1. Subir al Storage
-      const fileName = `${Date.now()}.jpg`; 
+      // 1. Obtener número secuencial de hoy
+      const hoy = new Date().toISOString().split('T')[0];
+      const { count } = await supabase
+        .from('lecturas_ia')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', hoy);
+      
+      const nuevoTicketNum = (count || 0) + 1;
+
+      // 2. Subir al Storage
+      const fileName = `ticket_${nuevoTicketNum}_${Date.now()}.jpg`; 
       const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, file);
       if (upErr) throw upErr;
 
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
       setFotoUrl(publicUrl);
 
-      // 2. Crear Ticket en Tabla
+      // 3. Crear Ticket en Tabla con número secuencial
       const { data: ticket, error: dbErr } = await supabase
         .from('lecturas_ia')
-        .insert({ status: 'procesando', foto_url: publicUrl })
+        .insert({ 
+            status: 'procesando', 
+            foto_url: publicUrl,
+            ticket_num: nuevoTicketNum,
+            revision_status: 'ia_ok'
+        })
         .select().single();
 
       if (dbErr) throw dbErr;
@@ -68,17 +83,50 @@ export default function LectorIndustrial() {
       localStorage.setItem('last_ticket_id', ticket.id);
       localStorage.setItem('last_foto_url', publicUrl);
 
-      // 3. Enviar a Hugging Face
+      // 4. Enviar a Hugging Face
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('ticket_id', ticket.id); // Mandamos el ID para que lo actualice
+      formData.append('ticket_id', ticket.id);
 
-      await fetch(IA_ENDPOINT, { method: "POST", body: formData });
+      fetch(IA_ENDPOINT, { method: "POST", body: formData }).catch(e => console.error(e));
 
     } catch (err: any) {
       alert("Error: " + err.message);
       setLoading(false);
     }
+  };
+
+  const handleEnviarAlJefe = async () => {
+    if (!datos) return;
+
+    // Actualizar estado a naranja en Supabase
+    await supabase
+      .from('lecturas_ia')
+      .update({ revision_status: 'pendiente_jefe' })
+      .eq('id', datos.id);
+
+    const mensaje = `🚨 *REVISIÓN MANUAL REQUERIDA* 🚨%0A` +
+      `*Ticket:* #${datos.ticket_num}%0A` +
+      `*Dato IA:* ${datos.totalizador}%0A` +
+      `*Evidencia:* ${fotoUrl}%0A%0A` +
+      `_El operador reporta discrepancia en la lectura visual._`;
+
+    window.open(`https://wa.me/${TELEFONO_JEFE}?text=${mensaje}`, '_blank');
+    setDatos(null);
+    setFotoUrl(null);
+  };
+
+  const reprocesarMismaFoto = async () => {
+    if (!fotoUrl || !datos) return;
+    setLoading(true);
+    setTicketId(datos.id);
+    setDatos(null);
+    
+    // Llamada simple para que la IA lo intente de nuevo
+    // Nota: Aquí se asume que guardaste el archivo o usas la URL
+    alert("Re-enviando señal a la IA...");
+    // Simulamos re-envío (en una versión Pro enviarías el blob de nuevo)
+    setLoading(false); 
   };
 
   const cancelarProceso = () => {
@@ -102,7 +150,7 @@ export default function LectorIndustrial() {
             
             {fotoUrl && (
               <a href={fotoUrl} target="_blank" className="mb-8 text-blue-400 text-[9px] font-black underline underline-offset-4">
-                LINK EVIDENCIA CLOUD
+                VER EVIDENCIA CAPTURADA
               </a>
             )}
 
@@ -120,23 +168,53 @@ export default function LectorIndustrial() {
               )}
             </button>
             
-            <p className="mt-10 text-zinc-600 text-[10px] font-black text-center tracking-widest">
-              {ticketId ? "ESPERANDO RESPUESTA IA..." : "PRESIONE PARA CAPTURAR"}
+            <p className="mt-10 text-zinc-600 text-[10px] font-black text-center tracking-widest leading-tight">
+              {ticketId ? "LA IA ESTÁ ANALIZANDO...\nESPERE UN MOMENTO" : "PRESIONE PARA CAPTURAR\nMEDIDOR MÁSICO"}
             </p>
 
             {ticketId && (
               <button onClick={cancelarProceso} className="mt-8 text-red-500 text-[9px] font-black border border-red-500/20 px-8 py-3 rounded-full">
-                ANULAR Y REINTENTAR
+                ANULAR PROCESO
               </button>
             )}
           </div>
         ) : (
-          <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-8 animate-in zoom-in shadow-2xl">
-            <div className="text-center py-6 border-y border-white/5">
-              <p className="text-[11px] text-zinc-500 font-bold mb-2 tracking-widest">TOTALIZADOR</p>
-              <p className="text-7xl font-black text-green-500 tabular-nums">{datos.totalizador}</p>
+          <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in shadow-2xl">
+            <div className="flex justify-between items-center px-2">
+                <span className="text-[10px] font-bold text-zinc-500 tracking-widest">TICKET SECUENCIAL</span>
+                <span className="text-xl font-black text-white">#{datos.ticket_num}</span>
             </div>
-            <button onClick={() => {setDatos(null); setFotoUrl(null);}} className="w-full py-6 bg-blue-600 rounded-3xl font-black text-xs tracking-[0.2em]">FINALIZAR</button>
+
+            <div className="text-center py-8 border-y border-white/5">
+              <p className="text-[11px] text-zinc-500 font-bold mb-4 tracking-widest">LECTURA DETECTADA</p>
+              <p className="text-7xl font-black text-green-500 tabular-nums tracking-tighter">{datos.totalizador}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+                <button 
+                    onClick={() => {setDatos(null); setFotoUrl(null);}}
+                    className="py-5 bg-zinc-800 rounded-3xl font-black text-[9px] tracking-widest border border-white/5"
+                >
+                    RE-PROCESAR
+                </button>
+                <button 
+                    onClick={handleEnviarAlJefe}
+                    className="py-5 bg-orange-600/20 text-orange-500 rounded-3xl font-black text-[9px] tracking-widest border border-orange-500/20"
+                >
+                    AVISAR AL JEFE
+                </button>
+            </div>
+
+            <button 
+                onClick={() => {setDatos(null); setFotoUrl(null);}} 
+                className="w-full py-6 bg-blue-600 rounded-3xl font-black text-xs tracking-[0.2em] shadow-lg shadow-blue-900/20"
+            >
+                CONFIRMAR Y FINALIZAR
+            </button>
+            
+            <div className="text-center">
+                <a href={fotoUrl || '#'} target="_blank" className="text-[9px] text-zinc-500 underline underline-offset-4">REVISAR FOTO DE EVIDENCIA</a>
+            </div>
           </div>
         )}
 
