@@ -14,7 +14,7 @@ export default function IngresoACP() {
   const [observaciones, setObservaciones] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. PERSISTENCIA: Al cargar, verificar si hay algo procesándose hoy
+  // 1. PERSISTENCIA
   useEffect(() => {
     const verificarProcesoPendiente = async () => {
       const hoy = new Date().toISOString().split('T')[0];
@@ -66,7 +66,6 @@ export default function IngresoACP() {
 
   const handleCancelar = async () => {
     if (!ticketId) return resetEstados();
-    // Opcional: Marcar como error en DB para que no aparezca en persistencia
     await supabase.from('lecturas_ia').update({ status: 'error', ia_raw: 'Cancelado por usuario' }).eq('id', ticketId);
     resetEstados();
   };
@@ -135,7 +134,7 @@ export default function IngresoACP() {
 
   const handleEnviarAlJefe = async () => {
     if (!datos) return;
-    const mensaje = `🚨 *REVISIÓN INGRESO ACP* 🚨\n\n*Ticket:* #${datos.ticket_num}\n*Lectura:* ${datos.totalizador} kg\n*Temp:* ${datos.temperatura}°C\n\n*FOTO:* ${datos.foto_url}`;
+    const mensaje = `🚨 *REVISIÓN INGRESO ACP* 🚨\n\n*Ticket:* #${datos.ticket_num}\n*Lectura:* ${datos.totalizador} kg\n*Temp:* ${datos.temperatura}°C\n\n*FOTO:* ${datos.foto_url || fotoUrl}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
   };
 
@@ -149,11 +148,18 @@ export default function IngresoACP() {
           <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
         </header>
 
-        {/* --- ESTADO: PROCESANDO (BLOQUEO CON CANCELAR) --- */}
+        {/* --- ESTADO: PROCESANDO --- */}
         {loading && !datos ? (
           <div className="flex flex-col items-center border-2 border-blue-900/30 rounded-[40px] p-10 bg-zinc-900/40">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-blue-500 font-black text-[11px] tracking-widest text-center">IA ANALIZANDO...</p>
+            
+            {fotoUrl && (
+              <a href={fotoUrl} target="_blank" className="mt-4 text-blue-400 text-[9px] font-black underline tracking-widest">
+                VER FOTO ENVIADA
+              </a>
+            )}
+
             <button 
               onClick={handleCancelar}
               className="mt-8 px-6 py-3 bg-red-600/20 text-red-500 border border-red-500/20 rounded-xl text-[9px] font-black tracking-widest"
@@ -176,12 +182,19 @@ export default function IngresoACP() {
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR ENTRADA</p>
                 <p className="text-6xl font-black text-blue-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
                 <p className="text-[10px] text-zinc-600 font-bold uppercase">{datos.temperatura}°C</p>
+                
+                <a href={datos.foto_url || fotoUrl} target="_blank" className="mt-2 inline-block text-blue-400 text-[9px] font-black underline tracking-widest">
+                  VER FOTO DE RESPALDO
+                </a>
             </div>
+            
             <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" placeholder="NOTAS..." />
+            
             <div className="grid grid-cols-2 gap-3">
                 <button onClick={resetEstados} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px]">RE-PROCESAR</button>
                 <button onClick={handleEnviarAlJefe} className="py-5 bg-orange-600/20 text-orange-500 rounded-2xl font-black text-[9px]">AVISAR JEFE</button>
             </div>
+            
             <button onClick={handleConfirmarYGuardar} className="w-full py-6 bg-blue-600 rounded-2xl font-black text-xs tracking-[0.2em] shadow-lg">CONFIRMAR REGISTRO</button>
           </div>
         )}
