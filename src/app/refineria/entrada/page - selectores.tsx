@@ -13,34 +13,35 @@ export default function IngresoACP() {
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
   const [observaciones, setObservaciones] = useState('');
   
+  // ESTADOS CRÍTICOS
   const [variedad, setVariedad] = useState('ALTO OLEICO');
   const [esReproceso, setEsReproceso] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. PERSISTENCIA
+  // 1. RECUPERAR DATOS (LocalStorage)
   useEffect(() => {
     const backup = localStorage.getItem('backup_ingreso_acp');
     if (backup) {
       const p = JSON.parse(backup);
-      setDatos(p.datos);
-      setFotoUrl(p.fotoUrl);
-      setVariedad(p.variedad || 'ALTO OLEICO');
-      setEsReproceso(p.esReproceso || false);
-      setObservaciones(p.observaciones || '');
-      return;
+      if (p.datos) setDatos(p.datos);
+      if (p.fotoUrl) setFotoUrl(p.fotoUrl);
+      if (p.variedad) setVariedad(p.variedad);
+      if (p.esReproceso !== undefined) setEsReproceso(p.esReproceso);
+      if (p.observaciones) setObservaciones(p.observaciones);
     }
   }, []);
 
+  // 2. MANTENER EL BACKUP ACTUALIZADO SIEMPRE
   useEffect(() => {
-    if (datos || fotoUrl) {
+    if (fotoUrl || datos) {
       localStorage.setItem('backup_ingreso_acp', JSON.stringify({
         datos, fotoUrl, variedad, esReproceso, observaciones
       }));
     }
   }, [datos, fotoUrl, variedad, esReproceso, observaciones]);
 
-  // 2. ESCUCHA IA
+  // 3. ESCUCHA DE IA (Sin resetear estados de selección)
   useEffect(() => {
     if (!ticketId) return;
     const channel = supabase
@@ -61,7 +62,7 @@ export default function IngresoACP() {
   }, [ticketId]);
 
   const resetTodo = () => {
-    localStorage.removeItem('backup_ingreso_acp'); 
+    localStorage.removeItem('backup_ingreso_acp');
     setLoading(false);
     setTicketId(null);
     setDatos(null);
@@ -74,7 +75,10 @@ export default function IngresoACP() {
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
+    // No reseteamos variedad ni esReproceso aquí para que se mantengan
     setLoading(true);
+    setDatos(null);
 
     try {
       const hoy = new Date().toISOString().split('T')[0];
@@ -94,6 +98,7 @@ export default function IngresoACP() {
             status: 'procesando', 
             foto_url: publicUrl, 
             ticket_num: nuevoTicketNum, 
+            revision_status: 'ia_ok',
             tipo_operacion: 'INGRESO_ACP'
         })
         .select().single();
@@ -114,8 +119,10 @@ export default function IngresoACP() {
 
   const handleConfirmarYGuardar = async () => {
     if (!datos || !fotoUrl) return;
+    
     setLoading(true);
     try {
+      // USAMOS LOS VALORES DIRECTOS DEL ESTADO ACTUAL
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'INGRESO_ACP',
           valor_lectura: parseFloat(datos.totalizador), 
@@ -129,25 +136,39 @@ export default function IngresoACP() {
       }]);
 
       if (error) throw error;
-      alert("✅ REGISTRO EXITOSO");
-      resetTodo(); 
+      alert(`✅ GUARDADO: ${variedad} ${esReproceso ? '(REPROCESO)' : ''}`);
+      resetTodo();
     } catch (err: any) { 
-        alert("Error: " + err.message); 
-    } finally { setLoading(false); }
+        alert("Error al guardar: " + err.message); 
+    } finally { 
+        setLoading(false); 
+    }
   };
 
-  const handleEnviarAlJefe = () => {
-    if (!datos) return;
-    const mensaje = `🚨 *SOLICITUD DE REVISIÓN - INGRESO ACP* 🚨\n\n` +
-                    `*Ticket IA:* ${datos.ticket_num || 'N/A'}\n` +
-                    `*Variedad:* ${variedad}\n` +
-                    `*Tipo Proceso:* ${esReproceso ? 'REPROCESO ⚠️' : 'NORMAL'}\n` +
-                    `*Lectura OCR:* ${datos.totalizador} kg\n` +
-                    `*Temperatura:* ${datos.temperatura}°C\n` +
-                    `*Observaciones:* ${observaciones || 'Sin notas'}\n\n` +
-                    `*FOTO:* ${fotoUrl}`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
-  };
+  const SelectorVariedad = () => (
+    <div className="bg-zinc-900 p-4 rounded-2xl border border-white/5 space-y-3">
+      <div className="flex gap-2">
+        <button 
+          onClick={() => setVariedad('ALTO OLEICO')}
+          className={`flex-1 py-3 rounded-xl text-[9px] font-black border transition-all ${variedad === 'ALTO OLEICO' ? 'border-blue-500 bg-blue-500/10 text-blue-500' : 'border-white/10 text-zinc-500'}`}
+        >
+          ALTO OLEICO
+        </button>
+        <button 
+          onClick={() => setVariedad('GUINENSIS')}
+          className={`flex-1 py-3 rounded-xl text-[9px] font-black border transition-all ${variedad === 'GUINENSIS' ? 'border-blue-500 bg-blue-500/10 text-blue-500' : 'border-white/10 text-zinc-500'}`}
+        >
+          GUINENSIS
+        </button>
+      </div>
+      <button 
+        onClick={() => setEsReproceso(!esReproceso)}
+        className={`w-full py-4 rounded-xl border font-black text-[9px] tracking-widest transition-all ${esReproceso ? 'border-orange-500 bg-orange-500/10 text-orange-500' : 'border-white/10 text-zinc-500'}`}
+      >
+        {esReproceso ? '✅ MODO REPROCESO ACTIVADO' : '¿ES REPROCESO?'}
+      </button>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-black text-white p-4 font-sans uppercase">
@@ -159,74 +180,44 @@ export default function IngresoACP() {
           <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
         </header>
 
-        {/* --- SELECTORES (BLOQUEADOS SI HAY DATOS) --- */}
-        <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${datos ? 'opacity-50 pointer-events-none' : ''}`}>
-           <div>
-              <label className="text-[9px] font-black text-zinc-500 tracking-widest ml-2">VARIEDAD</label>
-              <select 
-                value={variedad} 
-                onChange={(e) => setVariedad(e.target.value)}
-                disabled={!!datos}
-                className="w-full bg-black border border-white/10 rounded-2xl p-4 mt-2 text-xs font-bold text-white appearance-none"
-              >
-                <option value="ALTO OLEICO">ALTO OLEICO</option>
-                <option value="GUINENSIS">GUINENSIS</option>
-              </select>
-           </div>
-           <button 
-            onClick={() => setEsReproceso(!esReproceso)}
-            disabled={!!datos}
-            className={`w-full p-4 rounded-2xl border transition-all flex justify-between items-center ${esReproceso ? 'border-orange-500 bg-orange-500/10' : 'border-white/10 bg-black'}`}
-           >
-             <span className="text-[10px] font-black tracking-widest">{esReproceso ? 'ES REPROCESO ✅' : 'PROCESO NORMAL'}</span>
-             <div className={`w-4 h-4 rounded-full ${esReproceso ? 'bg-orange-500' : 'bg-zinc-800'}`}></div>
-           </button>
-        </div>
-
-        {loading && !datos ? (
-          <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-blue-900/30">
-            <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-            <p className="text-blue-500 font-black text-[11px] tracking-widest uppercase">IA Procesando...</p>
+        {!datos && !loading ? (
+          /* MODO INICIAL */
+          <div className="space-y-6">
+            <SelectorVariedad />
+            <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
+              <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl shadow-blue-900/40">
+                <span className="text-4xl">📸</span>
+              </button>
+              <p className="mt-8 text-zinc-600 text-[11px] font-black text-center tracking-widest">CAPTURAR TOTALIZADOR</p>
+            </div>
           </div>
-        ) : !datos ? (
-          <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
-            <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl">
-              <span className="text-4xl">📸</span>
-            </button>
-            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest">TOMAR FOTO TOTALIZADOR</p>
+        ) : loading && !datos ? (
+          /* MODO PROCESANDO */
+          <div className="flex flex-col items-center border-2 border-blue-900/30 rounded-[40px] p-10 bg-zinc-900/40">
+            <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+            <p className="text-blue-500 font-black text-[11px] tracking-widest text-center uppercase">Analizando Foto...</p>
+            {fotoUrl && (
+              <a href={fotoUrl} target="_blank" className="mt-4 text-blue-400 text-[9px] font-black underline animate-pulse">VER FOTO DE RESPALDO</a>
+            )}
           </div>
         ) : (
-          /* --- VISTA DE RESULTADOS (BLOQUEADA) --- */
+          /* RESULTADOS DE IA */
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
+            <SelectorVariedad />
+            
             <div className="text-center py-4 border-b border-white/5">
-                <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">VALOR CAPTURADO</p>
+                <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">VALOR LEÍDO</p>
                 <p className="text-6xl font-black text-blue-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
-                <p className="text-[10px] text-zinc-600 font-bold uppercase">{datos.temperatura}°C | {datos.densidad || '0.8936'} KG/L</p>
-                <a href={fotoUrl} target="_blank" className="text-[9px] text-blue-500 underline block mt-2">VER FOTO ORIGINAL</a>
+                <p className="text-[10px] text-zinc-600 font-bold">{datos.temperatura}°C | {datos.densidad || '0.8936'} KG/L</p>
+                <a href={fotoUrl} target="_blank" className="text-[9px] text-blue-500 underline block mt-2">Ver foto de respaldo</a>
             </div>
             
-            <textarea 
-              value={observaciones} 
-              onChange={(e) => setObservaciones(e.target.value)} 
-              className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" 
-              placeholder="NOTAS ADICIONALES..." 
-            />
+            <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} className="w-full bg-black/40 rounded-2xl p-4 text-[10px] border border-white/5" placeholder="NOTAS ADICIONALES..." />
             
             <div className="grid grid-cols-2 gap-3">
-                <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400 uppercase">REINICIAR</button>
-                <button onClick={handleEnviarAlJefe} className="py-5 bg-orange-600/20 text-orange-500 rounded-2xl font-black text-[9px] uppercase">AVISAR AL JEFE</button>
+                <button onClick={() => setDatos(null)} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px]">REINTENTAR</button>
+                <button onClick={handleConfirmarYGuardar} className="py-5 bg-blue-600 rounded-2xl font-black text-[9px] tracking-widest">CONFIRMAR</button>
             </div>
-            
-            <button 
-              onClick={handleConfirmarYGuardar} 
-              className="w-full py-6 bg-blue-600 rounded-2xl font-black text-xs tracking-[0.2em] shadow-lg uppercase"
-            >
-              CONFIRMAR REGISTRO
-            </button>
-
-            <p className="text-center text-[8px] text-zinc-600 font-bold px-4">
-              SI LA VARIEDAD O EL PROCESO SON INCORRECTOS, DEBE REINICIAR Y VOLVER A EMPEZAR O INFORMAR AL JEFE.
-            </p>
           </div>
         )}
         <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleCapture} className="hidden" />
