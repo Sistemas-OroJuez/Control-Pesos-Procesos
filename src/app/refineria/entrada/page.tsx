@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase';
 const BUCKET_NAME = 'refineria_assets'; 
 const IA_ENDPOINT = "https://orojuezsa-lector-ocr-industrial.hf.space/upload";
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
-const TELEFONO_JEFE = "593987654321"; // <--- CAMBIA ESTO POR EL NÚMERO REAL
 
 export default function LectorIndustrial() {
   const [loading, setLoading] = useState(false);
@@ -50,7 +49,6 @@ export default function LectorIndustrial() {
     setLoading(true);
 
     try {
-      // 1. OBTENER NÚMERO SECUENCIAL (Lógica nueva)
       const hoy = new Date().toISOString().split('T')[0];
       const { count } = await supabase
         .from('lecturas_ia')
@@ -59,7 +57,6 @@ export default function LectorIndustrial() {
       
       const nuevoTicketNum = (count || 0) + 1;
 
-      // 2. Subir al Storage
       const fileName = `ticket_${nuevoTicketNum}_${Date.now()}.jpg`; 
       const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, file);
       if (upErr) throw upErr;
@@ -67,14 +64,13 @@ export default function LectorIndustrial() {
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
       setFotoUrl(publicUrl);
 
-      // 3. Crear Ticket en Tabla con campos nuevos
       const { data: ticket, error: dbErr } = await supabase
         .from('lecturas_ia')
         .insert({ 
             status: 'procesando', 
             foto_url: publicUrl,
-            ticket_num: nuevoTicketNum, // Campo nuevo
-            revision_status: 'ia_ok'    // Campo nuevo
+            ticket_num: nuevoTicketNum,
+            revision_status: 'ia_ok'
         })
         .select().single();
 
@@ -83,7 +79,6 @@ export default function LectorIndustrial() {
       localStorage.setItem('last_ticket_id', ticket.id);
       localStorage.setItem('last_foto_url', publicUrl);
 
-      // 4. Enviar a Hugging Face
       const formData = new FormData();
       formData.append('file', file);
       formData.append('ticket_id', ticket.id);
@@ -99,19 +94,21 @@ export default function LectorIndustrial() {
   const handleEnviarAlJefe = async () => {
     if (!datos) return;
 
-    // Marcar como naranja en la DB
+    // Marcar como pendiente de revisión en la base de datos
     await supabase
       .from('lecturas_ia')
       .update({ revision_status: 'pendiente_jefe' })
       .eq('id', datos.id);
 
-    const mensaje = `🚨 *REVISIÓN MANUAL REQUERIDA* 🚨%0A` +
+    const mensaje = `🚨 *REVISIÓN MANUAL REQUERIDA* 🚨%0A%0A` +
       `*Ticket:* #${datos.ticket_num}%0A` +
-      `*Dato IA:* ${datos.totalizador}%0A` +
-      `*Evidencia:* ${fotoUrl}%0A%0A` +
-      `_El operador reporta discrepancia en la lectura visual._`;
+      `*Lectura IA:* ${datos.totalizador}%0A` +
+      `*Evidencia:* ${datos.foto_url}%0A%0A` +
+      `_El operador reporta una lectura errónea o requiere validación._`;
 
-    window.open(`https://wa.me/${TELEFONO_JEFE}?text=${mensaje}`, '_blank');
+    // Abrir WhatsApp sin número para elegir el contacto manualmente
+    window.open(`https://wa.me/?text=${mensaje}`, '_blank');
+    
     setDatos(null);
     setFotoUrl(null);
   };
@@ -136,7 +133,7 @@ export default function LectorIndustrial() {
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20 shadow-inner">
             
             {fotoUrl && (
-              <a href={fotoUrl} target="_blank" className="mb-8 text-blue-400 text-[9px] font-black underline underline-offset-4">
+              <a href={fotoUrl} target="_blank" className="mb-8 text-blue-400 text-[9px] font-black underline underline-offset-4 tracking-widest">
                 VER EVIDENCIA CAPTURADA
               </a>
             )}
@@ -145,7 +142,7 @@ export default function LectorIndustrial() {
               onClick={() => fileInputRef.current?.click()}
               disabled={loading || !!ticketId} 
               className={`w-28 h-28 rounded-full flex items-center justify-center transition-all ${
-                ticketId ? 'bg-zinc-900 animate-pulse' : 'bg-blue-600 shadow-2xl shadow-blue-900/40'
+                ticketId ? 'bg-zinc-900 animate-pulse border-2 border-blue-500/20' : 'bg-blue-600 shadow-2xl shadow-blue-900/40'
               }`}
             >
               {ticketId ? (
@@ -155,27 +152,35 @@ export default function LectorIndustrial() {
               )}
             </button>
             
-            <p className="mt-10 text-zinc-600 text-[10px] font-black text-center tracking-widest leading-tight">
+            <p className="mt-10 text-zinc-600 text-[10px] font-black text-center tracking-widest leading-tight whitespace-pre-line">
               {ticketId ? "LA IA ESTÁ ANALIZANDO...\nESPERE UN MOMENTO" : "PRESIONE PARA CAPTURAR\nMEDIDOR MÁSICO"}
             </p>
 
             {ticketId && (
-              <button onClick={cancelarProceso} className="mt-8 text-red-500 text-[9px] font-black border border-red-500/20 px-8 py-3 rounded-full">
+              <button onClick={cancelarProceso} className="mt-8 text-red-500 text-[9px] font-black border border-red-500/20 px-8 py-3 rounded-full tracking-[0.2em]">
                 ANULAR PROCESO
               </button>
             )}
           </div>
         ) : (
-          /* PANEL DE RESULTADOS CON BOTONES NUEVOS */
+          /* PANEL DE RESULTADOS ACTUALIZADO */
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in shadow-2xl">
             <div className="flex justify-between items-center px-2">
                 <span className="text-[10px] font-bold text-zinc-500 tracking-widest">TICKET #</span>
                 <span className="text-xl font-black text-white">{datos.ticket_num}</span>
             </div>
 
-            <div className="text-center py-8 border-y border-white/5">
+            <div className="text-center py-6 border-y border-white/5">
               <p className="text-[11px] text-zinc-500 font-bold mb-4 tracking-widest">LECTURA DETECTADA</p>
-              <p className="text-7xl font-black text-green-500 tabular-nums tracking-tighter">{datos.totalizador}</p>
+              <p className="text-6xl font-black text-green-500 tabular-nums tracking-tighter mb-4">{datos.totalizador}</p>
+              
+              <a 
+                href={datos.foto_url} 
+                target="_blank" 
+                className="inline-block text-[10px] text-blue-400 font-black underline underline-offset-4 tracking-widest opacity-80 hover:opacity-100 transition-opacity"
+              >
+                📂 COMPARAR CON FOTO ORIGINAL
+              </a>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
