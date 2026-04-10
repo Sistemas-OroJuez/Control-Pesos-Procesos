@@ -95,25 +95,36 @@ export default function LectorIndustrial() {
     if (!datos) return;
 
     try {
+      // Marcar en DB primero
       await supabase
         .from('lecturas_ia')
         .update({ revision_status: 'pendiente_jefe' })
         .eq('id', datos.id);
 
-      const mensaje = 
-        `🚨 *REVISIÓN REQUERIDA - REFINERÍA* 🚨\n\n` +
-        `*Ticket:* #${datos.ticket_num}\n` +
-        `*Totalizador:* ${datos.totalizador} kg\n` +
-        `*Temperatura:* ${datos.temperatura}°C\n\n` +
-        `*FOTO EVIDENCIA:* ${datos.foto_url}\n\n` +
-        `_Favor revisar la lectura manual._`;
+      // Construcción del mensaje con saltos de línea explícitos para URL
+      const mensaje = [
+        "🚨 REVISIÓN REQUERIDA - REFINERÍA 🚨",
+        "",
+        `TICKET: #${datos.ticket_num}`,
+        `TOTALIZADOR: ${datos.totalizador} kg`,
+        `TEMPERATURA: ${datos.temperatura || 'N/A'}°C`,
+        "",
+        `FOTO EVIDENCIA:`,
+        datos.foto_url,
+        "",
+        "Favor revisar la lectura manual."
+      ].join("\n");
 
-      window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
+      // El secreto está en encodeURIComponent sobre TODO el bloque de texto
+      const finalUrl = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
       
+      window.open(finalUrl, '_blank');
+      
+      // Resetear vista
       setDatos(null);
       setFotoUrl(null);
     } catch (e) {
-      alert("Error al marcar para revisión");
+      alert("Error al procesar el envío de WhatsApp");
     }
   };
 
@@ -125,18 +136,22 @@ export default function LectorIndustrial() {
     <div className="min-h-screen bg-black text-white p-4 font-sans uppercase">
       <div className="max-w-md mx-auto space-y-6">
         
-        {/* BOTÓN SALIR (FLECHITA) */}
-        <header className="flex justify-between items-center py-4 border-b border-white/10">
+        {/* CABECERA CON BOTÓN DE SALIR MEJORADO */}
+        <header className="flex items-center py-4 border-b border-white/10 gap-4">
           <button 
             onClick={() => window.location.href = DASHBOARD_URL} 
-            className="text-white bg-zinc-900 p-3 rounded-2xl border border-white/5 active:scale-95 transition-transform"
+            className="bg-zinc-900 border border-white/10 p-3 rounded-2xl hover:bg-zinc-800 active:scale-95 transition-all flex items-center justify-center"
+            title="Salir al Dashboard"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path d="M15 19l-7-7 7-7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path d="M11 19l-7-7 7-7m8 14l-7-7 7-7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
+            <span className="ml-2 text-[10px] font-black tracking-widest mr-1">SALIR</span>
           </button>
-          <h1 className="text-blue-500 font-black text-[10px] tracking-widest text-center w-full">REFINERÍA OROJUEZ</h1>
-          <div className="w-12"></div>
+          
+          <div className="flex-1 text-center">
+            <h1 className="text-blue-500 font-black text-[10px] tracking-[0.3em]">REFINERÍA OROJUEZ</h1>
+          </div>
         </header>
 
         {!datos ? (
@@ -175,7 +190,6 @@ export default function LectorIndustrial() {
             )}
           </div>
         ) : (
-          /* PANEL DE RESULTADOS CON TOTALIZADOR Y TEMPERATURA */
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in shadow-2xl">
             <div className="flex justify-between items-center px-2">
                 <span className="text-[10px] font-bold text-zinc-500 tracking-widest">TICKET #</span>
@@ -187,7 +201,6 @@ export default function LectorIndustrial() {
               <p className="text-6xl font-black text-green-500 tabular-nums tracking-tighter">{datos.totalizador}</p>
               <p className="text-[10px] text-zinc-600 font-bold mb-4">MÁSICO (kg)</p>
 
-              {/* VALORES SECUNDARIOS */}
               <div className="flex justify-center gap-6 py-4 bg-zinc-800/30 rounded-3xl mx-2">
                 <div>
                   <p className="text-[9px] text-zinc-500 font-bold tracking-widest mb-1">TEMPERATURA</p>
