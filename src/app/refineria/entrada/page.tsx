@@ -14,6 +14,30 @@ export default function IngresoACP() {
   const [observaciones, setObservaciones] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 1. PERSISTENCIA: Al cargar, verificar si hay algo procesándose hoy
+  useEffect(() => {
+    const verificarProcesoPendiente = async () => {
+      const hoy = new Date().toISOString().split('T')[0];
+      const { data } = await supabase
+        .from('lecturas_ia')
+        .select('*')
+        .eq('status', 'procesando')
+        .eq('tipo_operacion', 'INGRESO_ACP')
+        .gte('created_at', hoy)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (data) {
+        setTicketId(data.id);
+        setFotoUrl(data.foto_url);
+        setLoading(true);
+      }
+    };
+    verificarProcesoPendiente();
+  }, []);
+
+  // 2. ESCUCHA EN TIEMPO REAL
   useEffect(() => {
     if (!ticketId) return;
     const channel = supabase
@@ -23,22 +47,33 @@ export default function IngresoACP() {
       }, (payload) => {
           if (payload.new.status === 'completado') {
             setDatos(payload.new);
-            setLoading(false); 
+            setLoading(false);
             setTicketId(null);
           } else if (payload.new.status === 'error') {
             alert("Error IA: " + payload.new.ia_raw);
-            setLoading(false); 
-            setTicketId(null);
+            resetEstados();
           }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [ticketId]);
 
+  const resetEstados = () => {
+    setLoading(false);
+    setTicketId(null);
+    setDatos(null);
+    setFotoUrl(null);
+  };
+
+  const handleCancelar = async () => {
+    if (!ticketId) return resetEstados();
+    // Opcional: Marcar como error en DB para que no aparezca en persistencia
+    await supabase.from('lecturas_ia').update({ status: 'error', ia_raw: 'Cancelado por usuario' }).eq('id', ticketId);
+    resetEstados();
+  };
+
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
-    // 1. BLOQUEO INMEDIATO
     setLoading(true);
 
     try {
@@ -65,20 +100,16 @@ export default function IngresoACP() {
         .select().single();
 
       if (dbErr) throw dbErr;
-      
       setTicketId(ticket.id);
 
       const formData = new FormData();
       formData.append('file', file);
       formData.append('ticket_id', ticket.id);
-
-      // El loading se mantiene activo durante la petición a la IA
       await fetch(IA_ENDPOINT, { method: "POST", body: formData });
 
     } catch (err: any) {
       alert("Error: " + err.message);
-      setLoading(false); 
-      setTicketId(null);
+      resetEstados();
     }
   };
 
@@ -97,7 +128,7 @@ export default function IngresoACP() {
       }]);
       if (error) throw error;
       alert("✅ INGRESO REGISTRADO");
-      setDatos(null); setFotoUrl(null); setObservaciones('');
+      resetEstados();
     } catch (err: any) { alert(err.message); }
     finally { setLoading(false); }
   };
@@ -108,50 +139,38 @@ export default function IngresoACP() {
     window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
   };
 
-  // --- COMPONENTE DE CARGA (Para asegurar el bloqueo visual) ---
-  if (loading && !datos) {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4">
-         <div className="w-20 h-20 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-8"></div>
-         <h2 className="text-blue-500 font-black tracking-[0.2em] text-center uppercase">
-            IA Analizando Lectura...
-         </h2>
-         <p className="text-zinc-600 text-[10px] mt-4 font-bold tracking-widest uppercase">
-            Por favor espera, esto puede tardar unos minutos
-         </p>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-black text-white p-4 font-sans uppercase">
       <div className="max-w-md mx-auto space-y-6">
         <header className="flex items-center py-4 border-b border-white/10 gap-4">
-          <button 
-            onClick={() => {
-              setLoading(false);
-              window.location.href = DASHBOARD_URL;
-            }} 
-            className="bg-zinc-900 border border-white/10 p-3 rounded-2xl flex items-center"
-          >
+          <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-zinc-900 border border-white/10 p-3 rounded-2xl flex items-center">
             <span className="text-[10px] font-black text-zinc-400">VOLVER</span>
           </button>
           <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
         </header>
 
-        {!datos ? (
-          <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
+        {/* --- ESTADO: PROCESANDO (BLOQUEO CON CANCELAR) --- */}
+        {loading && !datos ? (
+          <div className="flex flex-col items-center border-2 border-blue-900/30 rounded-[40px] p-10 bg-zinc-900/40">
+            <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+            <p className="text-blue-500 font-black text-[11px] tracking-widest text-center">IA ANALIZANDO...</p>
             <button 
-              onClick={() => fileInputRef.current?.click()} 
-              className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl shadow-blue-900/40"
+              onClick={handleCancelar}
+              className="mt-8 px-6 py-3 bg-red-600/20 text-red-500 border border-red-500/20 rounded-xl text-[9px] font-black tracking-widest"
             >
+              CANCELAR PROCESO
+            </button>
+          </div>
+        ) : !datos ? (
+          /* --- ESTADO: LISTO PARA FOTO --- */
+          <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
+            <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl shadow-blue-900/40">
               <span className="text-4xl">📸</span>
             </button>
-            <p className="mt-8 text-zinc-600 text-[11px] font-black text-center tracking-widest leading-tight">
-              CAPTURAR ENTRADA ACP
-            </p>
+            <p className="mt-8 text-zinc-600 text-[11px] font-black text-center tracking-widest">CAPTURAR ENTRADA ACP</p>
           </div>
         ) : (
+          /* --- ESTADO: RESULTADOS --- */
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR ENTRADA</p>
@@ -160,7 +179,7 @@ export default function IngresoACP() {
             </div>
             <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" placeholder="NOTAS..." />
             <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => {setDatos(null); setFotoUrl(null); setLoading(false);}} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px]">RE-PROCESAR</button>
+                <button onClick={resetEstados} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px]">RE-PROCESAR</button>
                 <button onClick={handleEnviarAlJefe} className="py-5 bg-orange-600/20 text-orange-500 rounded-2xl font-black text-[9px]">AVISAR JEFE</button>
             </div>
             <button onClick={handleConfirmarYGuardar} className="w-full py-6 bg-blue-600 rounded-2xl font-black text-xs tracking-[0.2em] shadow-lg">CONFIRMAR REGISTRO</button>
