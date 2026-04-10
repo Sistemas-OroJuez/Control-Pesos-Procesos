@@ -13,14 +13,26 @@ export default function IngresoACP() {
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
   const [observaciones, setObservaciones] = useState('');
   
-  // ESTADOS QUE DEBEN PERSISTIR AL GUARDAR
+  // ESTADOS QUE DEBEN PERSISTIR
   const [variedad, setVariedad] = useState('ALTO OLEICO');
   const [esReproceso, setEsReproceso] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. PERSISTENCIA DE PROCESOS PENDIENTES
+  // 1. RECUPERAR DATOS SI SE SALIÓ POR ACCIDENTE
   useEffect(() => {
+    const backup = localStorage.getItem('backup_ingreso_acp');
+    if (backup) {
+      const parsed = JSON.parse(backup);
+      setDatos(parsed.datos);
+      setFotoUrl(parsed.fotoUrl);
+      setVariedad(parsed.variedad);
+      setEsReproceso(parsed.esReproceso);
+      setObservaciones(parsed.observaciones || '');
+      // No necesitamos buscar en Supabase si ya tenemos el backup local
+      return;
+    }
+
     const verificarProcesoPendiente = async () => {
       const hoy = new Date().toISOString().split('T')[0];
       const { data } = await supabase
@@ -42,7 +54,16 @@ export default function IngresoACP() {
     verificarProcesoPendiente();
   }, []);
 
-  // 2. ESCUCHA DE RESULTADOS DE LA IA
+  // 2. GUARDAR BACKUP LOCAL CADA VEZ QUE CAMBIAN LOS DATOS
+  useEffect(() => {
+    if (datos && fotoUrl) {
+      localStorage.setItem('backup_ingreso_acp', JSON.stringify({
+        datos, fotoUrl, variedad, esReproceso, observaciones
+      }));
+    }
+  }, [datos, fotoUrl, variedad, esReproceso, observaciones]);
+
+  // 3. ESCUCHA DE RESULTADOS DE LA IA
   useEffect(() => {
     if (!ticketId) return;
     const channel = supabase
@@ -56,19 +77,19 @@ export default function IngresoACP() {
             setTicketId(null);
           } else if (payload.new.status === 'error') {
             alert("Error IA: " + payload.new.ia_raw);
-            resetEstados();
+            resetTodo();
           }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [ticketId]);
 
   const resetEstados = () => {
+    localStorage.removeItem('backup_ingreso_acp'); // Limpiar backup
     setLoading(false);
     setTicketId(null);
     setDatos(null);
     setFotoUrl(null);
     setObservaciones('');
-    // No reseteamos variedad ni reproceso aquí para que el operador pueda corregir y re-procesar si es necesario
   };
 
   const resetTodo = () => {
@@ -78,8 +99,9 @@ export default function IngresoACP() {
   };
 
   const handleCancelar = async () => {
-    if (!ticketId) return resetTodo();
-    await supabase.from('lecturas_ia').update({ status: 'error', ia_raw: 'Cancelado por usuario' }).eq('id', ticketId);
+    if (ticketId) {
+      await supabase.from('lecturas_ia').update({ status: 'error', ia_raw: 'Cancelado por usuario' }).eq('id', ticketId);
+    }
     resetTodo();
   };
 
@@ -87,7 +109,7 @@ export default function IngresoACP() {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    setDatos(null);
+    resetTodo(); // Limpiar cualquier backup anterior al tomar nueva foto
     setLoading(true);
 
     try {
@@ -129,7 +151,6 @@ export default function IngresoACP() {
   };
 
   const handleConfirmarYGuardar = async () => {
-    // Verificamos que los datos existan antes de proceder
     if (!datos || !fotoUrl) return;
     
     setLoading(true);
@@ -142,14 +163,13 @@ export default function IngresoACP() {
           temperatura_c: parseFloat(datos.temperatura),
           densidad_kg_l: 0.8936, 
           usuario_registro: 'Operador Entrada',
-          // FORZAMOS EL USO DE LOS ESTADOS SELECCIONADOS EN LA UI
           variedad: variedad,
           es_reproceso: esReproceso
       }]);
 
       if (error) throw error;
       alert(`✅ REGISTRADO: ${variedad}${esReproceso ? ' (REPROCESO)' : ''}`);
-      resetTodo();
+      resetTodo(); // Borrar backup local solo si se guardó con éxito
     } catch (err: any) { 
         alert("Error al guardar: " + err.message); 
     } finally { 
@@ -212,7 +232,11 @@ export default function IngresoACP() {
           </div>
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
-            {/* OPCIONES DE RE-VALIDACIÓN ANTES DE GUARDAR */}
+            {/* INDICADOR DE RECUPERACIÓN */}
+            <div className="text-center -mb-4">
+                <span className="text-[8px] font-black text-blue-500/50 tracking-tighter uppercase tracking-[0.2em]">Sincronizado con memoria local</span>
+            </div>
+
             <div className="flex gap-2">
                 <button 
                     onClick={() => setVariedad(variedad === 'ALTO OLEICO' ? 'GUINENSIS' : 'ALTO OLEICO')}
@@ -236,12 +260,13 @@ export default function IngresoACP() {
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">VALOR LEÍDO POR IA</p>
                 <p className="text-6xl font-black text-blue-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
                 <p className="text-[10px] text-zinc-600 font-bold uppercase">{datos.temperatura}°C | {datos.densidad || '0.8936'} KG/L</p>
+                <a href={fotoUrl} target="_blank" className="text-[9px] text-blue-500 underline block mt-2">Ver foto de respaldo</a>
             </div>
             
             <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" placeholder="NOTAS ADICIONALES..." />
             
             <div className="grid grid-cols-2 gap-3">
-                <button onClick={resetEstados} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] uppercase">REINTENTAR</button>
+                <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] uppercase">REINTENTAR</button>
                 <button onClick={handleEnviarAlJefe} className="py-5 bg-orange-600/20 text-orange-500 rounded-2xl font-black text-[9px] uppercase">AVISAR JEFE</button>
             </div>
             
