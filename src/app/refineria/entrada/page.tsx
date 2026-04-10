@@ -13,21 +13,21 @@ export default function IngresoACP() {
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
   const [observaciones, setObservaciones] = useState('');
   
-  // ESTADOS QUE DEBEN PERSISTIR
+  // ESTADOS DE CONFIGURACIÓN
   const [variedad, setVariedad] = useState('ALTO OLEICO');
   const [esReproceso, setEsReproceso] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. RECUPERAR DATOS SI SE SALIÓ POR ACCIDENTE
+  // 1. RECUPERAR BACKUP (LocalStorage)
   useEffect(() => {
     const backup = localStorage.getItem('backup_ingreso_acp');
     if (backup) {
       const parsed = JSON.parse(backup);
       setDatos(parsed.datos);
       setFotoUrl(parsed.fotoUrl);
-      setVariedad(parsed.variedad);
-      setEsReproceso(parsed.esReproceso);
+      setVariedad(parsed.variedad || 'ALTO OLEICO');
+      setEsReproceso(parsed.esReproceso || false);
       setObservaciones(parsed.observaciones || '');
       return;
     }
@@ -53,7 +53,7 @@ export default function IngresoACP() {
     verificarProcesoPendiente();
   }, []);
 
-  // 2. GUARDAR BACKUP LOCAL AUTOMÁTICAMENTE
+  // 2. ACTUALIZAR BACKUP AL CAMBIAR CUALQUIER ESTADO
   useEffect(() => {
     if ((datos || ticketId) && fotoUrl) {
       localStorage.setItem('backup_ingreso_acp', JSON.stringify({
@@ -62,7 +62,7 @@ export default function IngresoACP() {
     }
   }, [datos, ticketId, fotoUrl, variedad, esReproceso, observaciones]);
 
-  // 3. ESCUCHA DE RESULTADOS DE LA IA
+  // 3. SEGUIMIENTO IA
   useEffect(() => {
     if (!ticketId) return;
     const channel = supabase
@@ -149,12 +149,17 @@ export default function IngresoACP() {
     }
   };
 
+  // --- FIX: CAPTURA FORZADA DE ESTADOS ---
   const handleConfirmarYGuardar = async () => {
     if (!datos || !fotoUrl) return;
     
     setLoading(true);
+
+    // Forzamos la lectura de los valores actuales para evitar errores de estado asíncrono
+    const finalReproceso = esReproceso;
+    const finalVariedad = variedad;
+
     try {
-      // AQUÍ ESTÁ EL CAMBIO: Forzamos el uso de los estados actuales de React
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'INGRESO_ACP',
           valor_lectura: parseFloat(datos.totalizador), 
@@ -163,12 +168,12 @@ export default function IngresoACP() {
           temperatura_c: parseFloat(datos.temperatura || 0),
           densidad_kg_l: 0.8936, 
           usuario_registro: 'Operador Entrada',
-          variedad: variedad,     // <--- Asegurado
-          es_reproceso: esReproceso // <--- Asegurado
+          variedad: finalVariedad,     // Inyección directa del valor capturado
+          es_reproceso: finalReproceso // Inyección directa del valor capturado
       }]);
 
       if (error) throw error;
-      alert(`✅ REGISTRADO: ${variedad}${esReproceso ? ' (REPROCESO)' : ''}`);
+      alert(`✅ REGISTRADO: ${finalVariedad}${finalReproceso ? ' (REPROCESO)' : ''}`);
       resetTodo(); 
     } catch (err: any) { 
         alert("Error al guardar: " + err.message); 
