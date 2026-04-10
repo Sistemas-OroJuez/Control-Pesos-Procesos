@@ -14,7 +14,6 @@ export default function IngresoACP() {
   const [observaciones, setObservaciones] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. ESCUCHAR CAMBIOS DE LA IA
   useEffect(() => {
     if (!ticketId) return;
     const channel = supabase
@@ -24,23 +23,23 @@ export default function IngresoACP() {
       }, (payload) => {
           if (payload.new.status === 'completado') {
             setDatos(payload.new);
-            setLoading(false); // SOLO AQUÍ LIBERAMOS EL BLOQUEO
+            setLoading(false); 
             setTicketId(null);
           } else if (payload.new.status === 'error') {
             alert("Error IA: " + payload.new.ia_raw);
-            setLoading(false); // LIBERAMOS PARA REINTENTAR
+            setLoading(false); 
             setTicketId(null);
           }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [ticketId]);
 
-  // 2. CAPTURA E INICIO DE PROCESO
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    setLoading(true); // BLOQUEO TOTAL DE LA INTERFAZ
+    // 1. BLOQUEO INMEDIATO
+    setLoading(true);
 
     try {
       const hoy = new Date().toISOString().split('T')[0];
@@ -73,12 +72,12 @@ export default function IngresoACP() {
       formData.append('file', file);
       formData.append('ticket_id', ticket.id);
 
-      // Llamada real a Hugging Face sin desactivar loading
+      // El loading se mantiene activo durante la petición a la IA
       await fetch(IA_ENDPOINT, { method: "POST", body: formData });
 
     } catch (err: any) {
       alert("Error: " + err.message);
-      setLoading(false); // Solo liberamos si falla la subida inicial
+      setLoading(false); 
       setTicketId(null);
     }
   };
@@ -109,6 +108,21 @@ export default function IngresoACP() {
     window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
   };
 
+  // --- COMPONENTE DE CARGA (Para asegurar el bloqueo visual) ---
+  if (loading && !datos) {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4">
+         <div className="w-20 h-20 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-8"></div>
+         <h2 className="text-blue-500 font-black tracking-[0.2em] text-center uppercase">
+            IA Analizando Lectura...
+         </h2>
+         <p className="text-zinc-600 text-[10px] mt-4 font-bold tracking-widest uppercase">
+            Por favor espera, esto puede tardar unos minutos
+         </p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-black text-white p-4 font-sans uppercase">
       <div className="max-w-md mx-auto space-y-6">
@@ -126,33 +140,18 @@ export default function IngresoACP() {
         </header>
 
         {!datos ? (
-          /* ZONA DE CAPTURA CON BLOQUEO */
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
-            {loading ? (
-              /* MIENTRAS CARGA: Spinner y mensaje, NO botón */
-              <div className="flex flex-col items-center animate-pulse">
-                <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                <p className="text-blue-500 text-[11px] font-black tracking-widest text-center">
-                  IA ANALIZANDO... <br/> <span className="text-zinc-500 text-[9px]">ESPERA POR FAVOR</span>
-                </p>
-              </div>
-            ) : (
-              /* ESTADO NORMAL: Botón visible */
-              <>
-                <button 
-                  onClick={() => fileInputRef.current?.click()} 
-                  className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl shadow-blue-900/40"
-                >
-                  <span className="text-4xl">📸</span>
-                </button>
-                <p className="mt-8 text-zinc-600 text-[11px] font-black text-center tracking-widest leading-tight">
-                  CAPTURAR ENTRADA ACP
-                </p>
-              </>
-            )}
+            <button 
+              onClick={() => fileInputRef.current?.click()} 
+              className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl shadow-blue-900/40"
+            >
+              <span className="text-4xl">📸</span>
+            </button>
+            <p className="mt-8 text-zinc-600 text-[11px] font-black text-center tracking-widest leading-tight">
+              CAPTURAR ENTRADA ACP
+            </p>
           </div>
         ) : (
-          /* RESULTADOS DE IA */
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR ENTRADA</p>
