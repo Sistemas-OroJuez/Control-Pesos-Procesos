@@ -160,14 +160,14 @@ export default function IngresoACP() {
         </header>
 
         {/* --- SELECTORES (BLOQUEADOS SI HAY DATOS) --- */}
-        <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${datos ? 'opacity-50 pointer-events-none' : ''}`}>
+        <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${datos ? 'opacity-40 pointer-events-none' : ''}`}>
            <div>
               <label className="text-[9px] font-black text-zinc-500 tracking-widest ml-2">VARIEDAD</label>
               <select 
                 value={variedad} 
                 onChange={(e) => setVariedad(e.target.value)}
                 disabled={!!datos}
-                className="w-full bg-black border border-white/10 rounded-2xl p-4 mt-2 text-xs font-bold text-white appearance-none"
+                className="w-full bg-black border border-white/10 rounded-2xl p-4 mt-2 text-xs font-bold text-white appearance-none focus:outline-none"
               >
                 <option value="ALTO OLEICO">ALTO OLEICO</option>
                 <option value="GUINENSIS">GUINENSIS</option>
@@ -178,31 +178,41 @@ export default function IngresoACP() {
             disabled={!!datos}
             className={`w-full p-4 rounded-2xl border transition-all flex justify-between items-center ${esReproceso ? 'border-orange-500 bg-orange-500/10' : 'border-white/10 bg-black'}`}
            >
-             <span className="text-[10px] font-black tracking-widest">{esReproceso ? 'ES REPROCESO ✅' : 'PROCESO NORMAL'}</span>
+             <span className="text-[10px] font-black tracking-widest uppercase">{esReproceso ? 'ES REPROCESO ✅' : 'PROCESO NORMAL'}</span>
              <div className={`w-4 h-4 rounded-full ${esReproceso ? 'bg-orange-500' : 'bg-zinc-800'}`}></div>
            </button>
         </div>
 
         {loading && !datos ? (
+          /* --- MODO ESPERA CON LINK A FOTO --- */
           <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-blue-900/30">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-            <p className="text-blue-500 font-black text-[11px] tracking-widest uppercase">IA Procesando...</p>
+            <p className="text-blue-500 font-black text-[11px] tracking-widest uppercase mb-4">IA Analizando...</p>
+            {fotoUrl && (
+              <a href={fotoUrl} target="_blank" className="text-blue-400 text-[9px] font-black underline animate-pulse">
+                REVISAR FOTO CAPTURADA
+              </a>
+            )}
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
             <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl">
               <span className="text-4xl">📸</span>
             </button>
-            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest">TOMAR FOTO TOTALIZADOR</p>
+            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">TOMAR FOTO TOTALIZADOR</p>
           </div>
         ) : (
           /* --- VISTA DE RESULTADOS (BLOQUEADA) --- */
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
+                <div className="flex justify-center gap-2 mb-4">
+                  <span className="bg-blue-500/10 text-blue-500 text-[8px] border border-blue-500/20 px-3 py-1 rounded-full font-black uppercase">{variedad}</span>
+                  {esReproceso && <span className="bg-orange-500/10 text-orange-500 text-[8px] border border-orange-500/20 px-3 py-1 rounded-full font-black uppercase">REPROCESO</span>}
+                </div>
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">VALOR CAPTURADO</p>
                 <p className="text-6xl font-black text-blue-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
                 <p className="text-[10px] text-zinc-600 font-bold uppercase">{datos.temperatura}°C | {datos.densidad || '0.8936'} KG/L</p>
-                <a href={fotoUrl} target="_blank" className="text-[9px] text-blue-500 underline block mt-2">VER FOTO ORIGINAL</a>
+                <a href={fotoUrl} target="_blank" className="text-[9px] text-blue-500 underline block mt-2 font-bold tracking-widest">VER FOTO ORIGINAL</a>
             </div>
             
             <textarea 
