@@ -18,20 +18,46 @@ export default function IngresoACP() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. PERSISTENCIA
+  // 1. RECUPERACIÓN DE PROCESO ACTIVO (Para evitar pérdida de datos al salir/entrar)
   useEffect(() => {
-    const backup = localStorage.getItem('backup_ingreso_acp');
-    if (backup) {
-      const p = JSON.parse(backup);
-      setDatos(p.datos);
-      setFotoUrl(p.fotoUrl);
-      setVariedad(p.variedad || 'ALTO OLEICO');
-      setEsReproceso(p.esReproceso || false);
-      setObservaciones(p.observaciones || '');
-      return;
-    }
+    const recuperarEstado = async () => {
+      // Primero revisamos LocalStorage para datos ya procesados
+      const backup = localStorage.getItem('backup_ingreso_acp');
+      if (backup) {
+        const p = JSON.parse(backup);
+        if (p.datos) {
+          setDatos(p.datos);
+          setFotoUrl(p.fotoUrl);
+          setVariedad(p.variedad || 'ALTO OLEICO');
+          setEsReproceso(p.esReproceso || false);
+          setObservaciones(p.observaciones || '');
+          return; 
+        }
+      }
+
+      // Si no hay datos finales, buscamos si hay un ticket 'procesando' hoy
+      const hoy = new Date().toISOString().split('T')[0];
+      const { data: pendiente } = await supabase
+        .from('lecturas_ia')
+        .select('*')
+        .eq('status', 'procesando')
+        .eq('tipo_operacion', 'INGRESO_ACP')
+        .gte('created_at', hoy)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (pendiente) {
+        setTicketId(pendiente.id);
+        setFotoUrl(pendiente.foto_url);
+        setLoading(true);
+      }
+    };
+
+    recuperarEstado();
   }, []);
 
+  // Mantenemos el backup local actualizado cada vez que cambian los estados
   useEffect(() => {
     if (datos || fotoUrl) {
       localStorage.setItem('backup_ingreso_acp', JSON.stringify({
@@ -40,7 +66,7 @@ export default function IngresoACP() {
     }
   }, [datos, fotoUrl, variedad, esReproceso, observaciones]);
 
-  // 2. ESCUCHA IA
+  // 2. ESCUCHA IA (Realtime)
   useEffect(() => {
     if (!ticketId) return;
     const channel = supabase
@@ -55,6 +81,7 @@ export default function IngresoACP() {
           } else if (payload.new.status === 'error') {
             alert("Error IA: " + payload.new.ia_raw);
             setLoading(false);
+            setTicketId(null);
           }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -144,7 +171,6 @@ export default function IngresoACP() {
                     `*Tipo Proceso:* ${esReproceso ? 'REPROCESO ⚠️' : 'NORMAL'}\n` +
                     `*Lectura OCR:* ${datos.totalizador} kg\n` +
                     `*Temperatura:* ${datos.temperatura}°C\n` +
-                    `*Observaciones:* ${observaciones || 'Sin notas'}\n\n` +
                     `*FOTO:* ${fotoUrl}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
   };
@@ -159,14 +185,14 @@ export default function IngresoACP() {
           <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
         </header>
 
-        {/* --- SELECTORES (BLOQUEADOS SI HAY DATOS) --- */}
-        <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${datos ? 'opacity-40 pointer-events-none' : ''}`}>
+        {/* --- SELECTORES (BLOQUEADOS SI HAY DATOS O CARGANDO) --- */}
+        <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${ (datos || loading) ? 'opacity-40 pointer-events-none' : ''}`}>
            <div>
               <label className="text-[9px] font-black text-zinc-500 tracking-widest ml-2">VARIEDAD</label>
               <select 
                 value={variedad} 
                 onChange={(e) => setVariedad(e.target.value)}
-                disabled={!!datos}
+                disabled={!!datos || loading}
                 className="w-full bg-black border border-white/10 rounded-2xl p-4 mt-2 text-xs font-bold text-white appearance-none focus:outline-none"
               >
                 <option value="ALTO OLEICO">ALTO OLEICO</option>
@@ -175,7 +201,7 @@ export default function IngresoACP() {
            </div>
            <button 
             onClick={() => setEsReproceso(!esReproceso)}
-            disabled={!!datos}
+            disabled={!!datos || loading}
             className={`w-full p-4 rounded-2xl border transition-all flex justify-between items-center ${esReproceso ? 'border-orange-500 bg-orange-500/10' : 'border-white/10 bg-black'}`}
            >
              <span className="text-[10px] font-black tracking-widest uppercase">{esReproceso ? 'ES REPROCESO ✅' : 'PROCESO NORMAL'}</span>
@@ -233,10 +259,6 @@ export default function IngresoACP() {
             >
               CONFIRMAR REGISTRO
             </button>
-
-            <p className="text-center text-[8px] text-zinc-600 font-bold px-4">
-              SI LA VARIEDAD O EL PROCESO SON INCORRECTOS, DEBE REINICIAR Y VOLVER A EMPEZAR O INFORMAR AL JEFE.
-            </p>
           </div>
         )}
         <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleCapture} className="hidden" />
