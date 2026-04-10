@@ -94,23 +94,27 @@ export default function LectorIndustrial() {
   const handleEnviarAlJefe = async () => {
     if (!datos) return;
 
-    // Marcar como pendiente de revisión en la base de datos
-    await supabase
-      .from('lecturas_ia')
-      .update({ revision_status: 'pendiente_jefe' })
-      .eq('id', datos.id);
+    try {
+      await supabase
+        .from('lecturas_ia')
+        .update({ revision_status: 'pendiente_jefe' })
+        .eq('id', datos.id);
 
-    const mensaje = `🚨 *REVISIÓN MANUAL REQUERIDA* 🚨%0A%0A` +
-      `*Ticket:* #${datos.ticket_num}%0A` +
-      `*Lectura IA:* ${datos.totalizador}%0A` +
-      `*Evidencia:* ${datos.foto_url}%0A%0A` +
-      `_El operador reporta una lectura errónea o requiere validación._`;
+      const mensaje = 
+        `🚨 *REVISIÓN REQUERIDA - REFINERÍA* 🚨\n\n` +
+        `*Ticket:* #${datos.ticket_num}\n` +
+        `*Totalizador:* ${datos.totalizador} kg\n` +
+        `*Temperatura:* ${datos.temperatura}°C\n\n` +
+        `*FOTO EVIDENCIA:* ${datos.foto_url}\n\n` +
+        `_Favor revisar la lectura manual._`;
 
-    // Abrir WhatsApp sin número para elegir el contacto manualmente
-    window.open(`https://wa.me/?text=${mensaje}`, '_blank');
-    
-    setDatos(null);
-    setFotoUrl(null);
+      window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
+      
+      setDatos(null);
+      setFotoUrl(null);
+    } catch (e) {
+      alert("Error al marcar para revisión");
+    }
   };
 
   const cancelarProceso = () => {
@@ -121,12 +125,18 @@ export default function LectorIndustrial() {
     <div className="min-h-screen bg-black text-white p-4 font-sans uppercase">
       <div className="max-w-md mx-auto space-y-6">
         
+        {/* BOTÓN SALIR (FLECHITA) */}
         <header className="flex justify-between items-center py-4 border-b border-white/10">
-          <button onClick={() => window.location.href = DASHBOARD_URL} className="text-zinc-500 p-2">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <button 
+            onClick={() => window.location.href = DASHBOARD_URL} 
+            className="text-white bg-zinc-900 p-3 rounded-2xl border border-white/5 active:scale-95 transition-transform"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path d="M15 19l-7-7 7-7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </button>
           <h1 className="text-blue-500 font-black text-[10px] tracking-widest text-center w-full">REFINERÍA OROJUEZ</h1>
-          <div className="w-10"></div>
+          <div className="w-12"></div>
         </header>
 
         {!datos ? (
@@ -141,43 +151,58 @@ export default function LectorIndustrial() {
             <button 
               onClick={() => fileInputRef.current?.click()}
               disabled={loading || !!ticketId} 
-              className={`w-28 h-28 rounded-full flex items-center justify-center transition-all ${
-                ticketId ? 'bg-zinc-900 animate-pulse border-2 border-blue-500/20' : 'bg-blue-600 shadow-2xl shadow-blue-900/40'
+              className={`w-32 h-32 rounded-full flex items-center justify-center transition-all ${
+                ticketId ? 'bg-zinc-900 animate-pulse border-2 border-blue-500/20' : 'bg-blue-600 shadow-2xl shadow-blue-900/40 active:scale-90'
               }`}
             >
               {ticketId ? (
                 <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
               ) : (
-                <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" strokeWidth="2"/></svg>
+                <svg className="w-14 h-14 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" strokeWidth="2"/>
+                </svg>
               )}
             </button>
             
-            <p className="mt-10 text-zinc-600 text-[10px] font-black text-center tracking-widest leading-tight whitespace-pre-line">
-              {ticketId ? "LA IA ESTÁ ANALIZANDO...\nESPERE UN MOMENTO" : "PRESIONE PARA CAPTURAR\nMEDIDOR MÁSICO"}
+            <p className="mt-10 text-zinc-600 text-[11px] font-black text-center tracking-widest leading-tight">
+              {ticketId ? "LA IA ESTÁ ANALIZANDO...\nESPERE UN MOMENTO" : "PRESIONE PARA CAPTURAR\nCONTADOR MÁSICO"}
             </p>
 
             {ticketId && (
-              <button onClick={cancelarProceso} className="mt-8 text-red-500 text-[9px] font-black border border-red-500/20 px-8 py-3 rounded-full tracking-[0.2em]">
-                ANULAR PROCESO
+              <button onClick={cancelarProceso} className="mt-8 text-red-500 text-[9px] font-black border border-red-500/20 px-8 py-3 rounded-full tracking-widest">
+                ANULAR
               </button>
             )}
           </div>
         ) : (
-          /* PANEL DE RESULTADOS ACTUALIZADO */
+          /* PANEL DE RESULTADOS CON TOTALIZADOR Y TEMPERATURA */
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in shadow-2xl">
             <div className="flex justify-between items-center px-2">
                 <span className="text-[10px] font-bold text-zinc-500 tracking-widest">TICKET #</span>
                 <span className="text-xl font-black text-white">{datos.ticket_num}</span>
             </div>
 
-            <div className="text-center py-6 border-y border-white/5">
-              <p className="text-[11px] text-zinc-500 font-bold mb-4 tracking-widest">LECTURA DETECTADA</p>
-              <p className="text-6xl font-black text-green-500 tabular-nums tracking-tighter mb-4">{datos.totalizador}</p>
-              
+            <div className="text-center py-6 border-y border-white/5 space-y-4">
+              <p className="text-[11px] text-zinc-500 font-bold tracking-widest">TOTALIZADOR DETECTADO</p>
+              <p className="text-6xl font-black text-green-500 tabular-nums tracking-tighter">{datos.totalizador}</p>
+              <p className="text-[10px] text-zinc-600 font-bold mb-4">MÁSICO (kg)</p>
+
+              {/* VALORES SECUNDARIOS */}
+              <div className="flex justify-center gap-6 py-4 bg-zinc-800/30 rounded-3xl mx-2">
+                <div>
+                  <p className="text-[9px] text-zinc-500 font-bold tracking-widest mb-1">TEMPERATURA</p>
+                  <p className="text-2xl font-black text-white">{datos.temperatura}°C</p>
+                </div>
+                <div className="border-l border-white/5 pl-6">
+                  <p className="text-[9px] text-zinc-500 font-bold tracking-widest mb-1">ESTADO IA</p>
+                  <p className="text-2xl font-black text-blue-500">LISTO</p>
+                </div>
+              </div>
+
               <a 
                 href={datos.foto_url} 
                 target="_blank" 
-                className="inline-block text-[10px] text-blue-400 font-black underline underline-offset-4 tracking-widest opacity-80 hover:opacity-100 transition-opacity"
+                className="inline-block mt-4 text-[10px] text-blue-400 font-black underline underline-offset-4 tracking-widest"
               >
                 📂 COMPARAR CON FOTO ORIGINAL
               </a>
@@ -186,13 +211,13 @@ export default function LectorIndustrial() {
             <div className="grid grid-cols-2 gap-3">
                 <button 
                     onClick={() => {setDatos(null); setTicketId(null); setFotoUrl(null);}}
-                    className="py-5 bg-zinc-800 rounded-3xl font-black text-[9px] tracking-widest border border-white/5"
+                    className="py-5 bg-zinc-800 rounded-3xl font-black text-[9px] tracking-widest border border-white/5 active:bg-zinc-700"
                 >
                     RE-PROCESAR
                 </button>
                 <button 
                     onClick={handleEnviarAlJefe}
-                    className="py-5 bg-orange-600/20 text-orange-500 rounded-3xl font-black text-[9px] tracking-widest border border-orange-500/20"
+                    className="py-5 bg-orange-600/20 text-orange-500 rounded-3xl font-black text-[9px] tracking-widest border border-orange-500/20 active:bg-orange-600/30"
                 >
                     AVISAR AL JEFE
                 </button>
@@ -200,7 +225,7 @@ export default function LectorIndustrial() {
 
             <button 
                 onClick={() => {setDatos(null); setFotoUrl(null);}} 
-                className="w-full py-6 bg-blue-600 rounded-3xl font-black text-xs tracking-[0.2em] shadow-lg shadow-blue-900/20"
+                className="w-full py-6 bg-blue-600 rounded-3xl font-black text-xs tracking-[0.2em] shadow-lg shadow-blue-900/20 active:scale-95"
             >
                 CONFIRMAR Y FINALIZAR
             </button>
