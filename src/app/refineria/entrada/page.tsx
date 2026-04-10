@@ -13,13 +13,13 @@ export default function IngresoACP() {
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
   const [observaciones, setObservaciones] = useState('');
   
-  // NUEVOS ESTADOS PARA VARIEDAD Y REPROCESO
+  // ESTADOS QUE DEBEN PERSISTIR AL GUARDAR
   const [variedad, setVariedad] = useState('ALTO OLEICO');
   const [esReproceso, setEsReproceso] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. PERSISTENCIA
+  // 1. PERSISTENCIA DE PROCESOS PENDIENTES
   useEffect(() => {
     const verificarProcesoPendiente = async () => {
       const hoy = new Date().toISOString().split('T')[0];
@@ -42,7 +42,7 @@ export default function IngresoACP() {
     verificarProcesoPendiente();
   }, []);
 
-  // 2. ESCUCHA EN TIEMPO REAL
+  // 2. ESCUCHA DE RESULTADOS DE LA IA
   useEffect(() => {
     if (!ticketId) return;
     const channel = supabase
@@ -68,21 +68,25 @@ export default function IngresoACP() {
     setDatos(null);
     setFotoUrl(null);
     setObservaciones('');
+    // No reseteamos variedad ni reproceso aquí para que el operador pueda corregir y re-procesar si es necesario
+  };
+
+  const resetTodo = () => {
+    resetEstados();
     setEsReproceso(false); 
     setVariedad('ALTO OLEICO');
   };
 
   const handleCancelar = async () => {
-    if (!ticketId) return resetEstados();
+    if (!ticketId) return resetTodo();
     await supabase.from('lecturas_ia').update({ status: 'error', ia_raw: 'Cancelado por usuario' }).eq('id', ticketId);
-    resetEstados();
+    resetTodo();
   };
 
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // CRUCIAL: Limpiamos datos anteriores para que no se vea el número viejo mientras carga
     setDatos(null);
     setLoading(true);
 
@@ -91,7 +95,6 @@ export default function IngresoACP() {
       const { count } = await supabase.from('lecturas_ia').select('*', { count: 'exact', head: true }).gte('created_at', hoy);
       const nuevoTicketNum = (count || 0) + 1;
 
-      // Usamos Date.now() para que el nombre del archivo sea siempre único y la IA no use caché
       const fileName = `ingreso_${nuevoTicketNum}_${Date.now()}.jpg`; 
       const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, file);
       if (upErr) throw upErr;
@@ -117,17 +120,18 @@ export default function IngresoACP() {
       formData.append('file', file);
       formData.append('ticket_id', ticket.id);
       
-      // Llamada al endpoint de la IA
       await fetch(IA_ENDPOINT, { method: "POST", body: formData });
 
     } catch (err: any) {
       alert("Error: " + err.message);
-      resetEstados();
+      resetTodo();
     }
   };
 
   const handleConfirmarYGuardar = async () => {
+    // Verificamos que los datos existan antes de proceder
     if (!datos || !fotoUrl) return;
+    
     setLoading(true);
     try {
       const { error } = await supabase.from('operaciones_refineria').insert([{
@@ -136,16 +140,21 @@ export default function IngresoACP() {
           foto_url: fotoUrl,
           observaciones: observaciones,
           temperatura_c: parseFloat(datos.temperatura),
-          densidad_kg_l: 0.8936, // Actualizado según tu foto
+          densidad_kg_l: 0.8936, 
           usuario_registro: 'Operador Entrada',
+          // FORZAMOS EL USO DE LOS ESTADOS SELECCIONADOS EN LA UI
           variedad: variedad,
           es_reproceso: esReproceso
       }]);
+
       if (error) throw error;
-      alert("✅ INGRESO REGISTRADO AUTOMÁTICAMENTE");
-      resetEstados();
-    } catch (err: any) { alert(err.message); }
-    finally { setLoading(false); }
+      alert(`✅ REGISTRADO: ${variedad}${esReproceso ? ' (REPROCESO)' : ''}`);
+      resetTodo();
+    } catch (err: any) { 
+        alert("Error al guardar: " + err.message); 
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   const handleEnviarAlJefe = async () => {
@@ -168,9 +177,6 @@ export default function IngresoACP() {
           <div className="flex flex-col items-center border-2 border-blue-900/30 rounded-[40px] p-10 bg-zinc-900/40">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-blue-500 font-black text-[11px] tracking-widest text-center">IA ANALIZANDO IMAGEN...</p>
-            {fotoUrl && (
-              <a href={fotoUrl} target="_blank" className="mt-4 text-blue-400 text-[9px] font-black underline tracking-widest">VER CAPTURA</a>
-            )}
             <button onClick={handleCancelar} className="mt-8 px-6 py-3 bg-red-600/20 text-red-500 border border-red-500/20 rounded-xl text-[9px] font-black uppercase">CANCELAR</button>
           </div>
         ) : !datos ? (
@@ -206,10 +212,26 @@ export default function IngresoACP() {
           </div>
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
+            {/* OPCIONES DE RE-VALIDACIÓN ANTES DE GUARDAR */}
+            <div className="flex gap-2">
+                <button 
+                    onClick={() => setVariedad(variedad === 'ALTO OLEICO' ? 'GUINENSIS' : 'ALTO OLEICO')}
+                    className="flex-1 py-2 bg-black border border-white/10 rounded-xl text-[8px] font-black text-zinc-400"
+                >
+                    CAMBIAR A {variedad === 'ALTO OLEICO' ? 'GUINENSIS' : 'ALTO OLEICO'}
+                </button>
+                <button 
+                    onClick={() => setEsReproceso(!esReproceso)}
+                    className={`flex-1 py-2 border rounded-xl text-[8px] font-black ${esReproceso ? 'bg-orange-500/10 border-orange-500 text-orange-500' : 'bg-black border-white/10 text-zinc-400'}`}
+                >
+                    {esReproceso ? 'QUITAR REPROCESO' : 'MARCAR REPROCESO'}
+                </button>
+            </div>
+
             <div className="text-center py-4 border-b border-white/5">
                 <div className="flex justify-center gap-2 mb-2">
                   <span className="bg-blue-500/10 text-blue-500 text-[8px] font-black px-3 py-1 rounded-full border border-blue-500/20 uppercase">{variedad}</span>
-                  {esReproceso && <span className="bg-orange-500/10 text-orange-500 text-[8px] font-black px-3 py-1 rounded-full border border-orange-500/20">REPROCESO</span>}
+                  {esReproceso && <span className="bg-orange-500/10 text-orange-500 text-[8px] font-black px-3 py-1 rounded-full border border-orange-500/20 uppercase">REPROCESO</span>}
                 </div>
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">VALOR LEÍDO POR IA</p>
                 <p className="text-6xl font-black text-blue-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
