@@ -13,6 +13,7 @@ export default function LectorIndustrial() {
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Recuperar estado si se refresca la página
   useEffect(() => {
     const savedTicket = localStorage.getItem('last_ticket_id');
     const savedFoto = localStorage.getItem('last_foto_url');
@@ -20,7 +21,7 @@ export default function LectorIndustrial() {
     if (savedFoto) setFotoUrl(savedFoto);
   }, []);
 
-  // ESCUCHAR CAMBIOS EN TIEMPO REAL
+  // Escuchar cambios en Supabase en tiempo real
   useEffect(() => {
     if (!ticketId) return;
 
@@ -35,7 +36,7 @@ export default function LectorIndustrial() {
             setTicketId(null);
             localStorage.clear();
           } else if (payload.new.status === 'error') {
-            alert("La IA encontró un problema. Intente de nuevo.");
+            alert("Error en la lectura: " + payload.new.ia_raw);
             cancelarProceso();
           }
       }).subscribe();
@@ -95,36 +96,31 @@ export default function LectorIndustrial() {
     if (!datos) return;
 
     try {
-      // Marcar en DB primero
       await supabase
         .from('lecturas_ia')
         .update({ revision_status: 'pendiente_jefe' })
         .eq('id', datos.id);
 
-      // Construcción del mensaje con saltos de línea explícitos para URL
+      // BLOQUE DE MENSAJE CORREGIDO PARA WHATSAPP
       const mensaje = [
-        "🚨 REVISIÓN REQUERIDA - REFINERÍA 🚨",
+        "🚨 *REVISIÓN REQUERIDA - REFINERÍA* 🚨",
         "",
-        `TICKET: #${datos.ticket_num}`,
-        `TOTALIZADOR: ${datos.totalizador} kg`,
-        `TEMPERATURA: ${datos.temperatura || 'N/A'}°C`,
+        `*TICKET:* #${datos.ticket_num}`,
+        `*TOTALIZADOR:* ${datos.totalizador} kg`,
+        `*TEMPERATURA:* ${datos.temperatura}°C`,
         "",
-        `FOTO EVIDENCIA:`,
+        `*FOTO EVIDENCIA:*`,
         datos.foto_url,
         "",
-        "Favor revisar la lectura manual."
+        "_Favor revisar la lectura manual._"
       ].join("\n");
 
-      // El secreto está en encodeURIComponent sobre TODO el bloque de texto
-      const finalUrl = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
       
-      window.open(finalUrl, '_blank');
-      
-      // Resetear vista
       setDatos(null);
       setFotoUrl(null);
     } catch (e) {
-      alert("Error al procesar el envío de WhatsApp");
+      alert("Error al enviar reporte");
     }
   };
 
@@ -136,19 +132,17 @@ export default function LectorIndustrial() {
     <div className="min-h-screen bg-black text-white p-4 font-sans uppercase">
       <div className="max-w-md mx-auto space-y-6">
         
-        {/* CABECERA CON BOTÓN DE SALIR MEJORADO */}
+        {/* CABECERA */}
         <header className="flex items-center py-4 border-b border-white/10 gap-4">
           <button 
             onClick={() => window.location.href = DASHBOARD_URL} 
-            className="bg-zinc-900 border border-white/10 p-3 rounded-2xl hover:bg-zinc-800 active:scale-95 transition-all flex items-center justify-center"
-            title="Salir al Dashboard"
+            className="bg-zinc-900 border border-white/10 p-3 rounded-2xl flex items-center active:scale-95 transition-all"
           >
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path d="M11 19l-7-7 7-7m8 14l-7-7 7-7" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path d="M11 19l-7-7 7-7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            <span className="ml-2 text-[10px] font-black tracking-widest mr-1">SALIR</span>
+            <span className="ml-2 text-[10px] font-black tracking-widest">SALIR</span>
           </button>
-          
           <div className="flex-1 text-center">
             <h1 className="text-blue-500 font-black text-[10px] tracking-[0.3em]">REFINERÍA OROJUEZ</h1>
           </div>
@@ -157,20 +151,14 @@ export default function LectorIndustrial() {
         {!datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20 shadow-inner">
             
-            {fotoUrl && (
-              <a href={fotoUrl} target="_blank" className="mb-8 text-blue-400 text-[9px] font-black underline underline-offset-4 tracking-widest">
-                VER EVIDENCIA CAPTURADA
-              </a>
-            )}
-
             <button 
               onClick={() => fileInputRef.current?.click()}
               disabled={loading || !!ticketId} 
               className={`w-32 h-32 rounded-full flex items-center justify-center transition-all ${
-                ticketId ? 'bg-zinc-900 animate-pulse border-2 border-blue-500/20' : 'bg-blue-600 shadow-2xl shadow-blue-900/40 active:scale-90'
+                loading ? 'bg-zinc-900 animate-pulse border-2 border-blue-500/20' : 'bg-blue-600 shadow-2xl shadow-blue-900/40 active:scale-90'
               }`}
             >
-              {ticketId ? (
+              {loading ? (
                 <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
               ) : (
                 <svg className="w-14 h-14 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -180,16 +168,17 @@ export default function LectorIndustrial() {
             </button>
             
             <p className="mt-10 text-zinc-600 text-[11px] font-black text-center tracking-widest leading-tight">
-              {ticketId ? "LA IA ESTÁ ANALIZANDO...\nESPERE UN MOMENTO" : "PRESIONE PARA CAPTURAR\nCONTADOR MÁSICO"}
+              {loading ? "LA IA ESTÁ ANALIZANDO...\nESPERE UN MOMENTO" : "PRESIONE PARA CAPTURAR\nCONTADOR MÁSICO"}
             </p>
 
-            {ticketId && (
+            {loading && (
               <button onClick={cancelarProceso} className="mt-8 text-red-500 text-[9px] font-black border border-red-500/20 px-8 py-3 rounded-full tracking-widest">
                 ANULAR
               </button>
             )}
           </div>
         ) : (
+          /* RESULTADOS */
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in shadow-2xl">
             <div className="flex justify-between items-center px-2">
                 <span className="text-[10px] font-bold text-zinc-500 tracking-widest">TICKET #</span>
@@ -199,16 +188,17 @@ export default function LectorIndustrial() {
             <div className="text-center py-6 border-y border-white/5 space-y-4">
               <p className="text-[11px] text-zinc-500 font-bold tracking-widest">TOTALIZADOR DETECTADO</p>
               <p className="text-6xl font-black text-green-500 tabular-nums tracking-tighter">{datos.totalizador}</p>
-              <p className="text-[10px] text-zinc-600 font-bold mb-4">MÁSICO (kg)</p>
+              <p className="text-[10px] text-zinc-600 font-bold mb-4 uppercase">Kilogramos (kg)</p>
 
+              {/* VALORES SECUNDARIOS */}
               <div className="flex justify-center gap-6 py-4 bg-zinc-800/30 rounded-3xl mx-2">
                 <div>
                   <p className="text-[9px] text-zinc-500 font-bold tracking-widest mb-1">TEMPERATURA</p>
                   <p className="text-2xl font-black text-white">{datos.temperatura}°C</p>
                 </div>
                 <div className="border-l border-white/5 pl-6">
-                  <p className="text-[9px] text-zinc-500 font-bold tracking-widest mb-1">ESTADO IA</p>
-                  <p className="text-2xl font-black text-blue-500">LISTO</p>
+                  <p className="text-[9px] text-zinc-500 font-bold tracking-widest mb-1">ESTADO</p>
+                  <p className="text-2xl font-black text-blue-500">OK</p>
                 </div>
               </div>
 
@@ -224,13 +214,13 @@ export default function LectorIndustrial() {
             <div className="grid grid-cols-2 gap-3">
                 <button 
                     onClick={() => {setDatos(null); setTicketId(null); setFotoUrl(null);}}
-                    className="py-5 bg-zinc-800 rounded-3xl font-black text-[9px] tracking-widest border border-white/5 active:bg-zinc-700"
+                    className="py-5 bg-zinc-800 rounded-3xl font-black text-[9px] tracking-widest border border-white/5"
                 >
                     RE-PROCESAR
                 </button>
                 <button 
                     onClick={handleEnviarAlJefe}
-                    className="py-5 bg-orange-600/20 text-orange-500 rounded-3xl font-black text-[9px] tracking-widest border border-orange-500/20 active:bg-orange-600/30"
+                    className="py-5 bg-orange-600/20 text-orange-500 rounded-3xl font-black text-[9px] tracking-widest border border-orange-500/20"
                 >
                     AVISAR AL JEFE
                 </button>
@@ -238,7 +228,7 @@ export default function LectorIndustrial() {
 
             <button 
                 onClick={() => {setDatos(null); setFotoUrl(null);}} 
-                className="w-full py-6 bg-blue-600 rounded-3xl font-black text-xs tracking-[0.2em] shadow-lg shadow-blue-900/20 active:scale-95"
+                className="w-full py-6 bg-blue-600 rounded-3xl font-black text-xs tracking-[0.2em] shadow-lg shadow-blue-900/20"
             >
                 CONFIRMAR Y FINALIZAR
             </button>
