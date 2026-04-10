@@ -19,7 +19,7 @@ export default function IngresoACP() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. RECUPERAR DATOS SI SE SALIÓ POR ACCIDENTE (LocalStorage + Supabase Check)
+  // 1. RECUPERAR DATOS SI SE SALIÓ POR ACCIDENTE
   useEffect(() => {
     const backup = localStorage.getItem('backup_ingreso_acp');
     if (backup) {
@@ -53,7 +53,7 @@ export default function IngresoACP() {
     verificarProcesoPendiente();
   }, []);
 
-  // 2. GUARDAR BACKUP LOCAL AUTOMÁTICAMENTE CUANDO HAY CAMBIOS
+  // 2. GUARDAR BACKUP LOCAL AUTOMÁTICAMENTE
   useEffect(() => {
     if ((datos || ticketId) && fotoUrl) {
       localStorage.setItem('backup_ingreso_acp', JSON.stringify({
@@ -121,7 +121,7 @@ export default function IngresoACP() {
       if (upErr) throw upErr;
 
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
-      setFotoUrl(publicUrl); // SE ASIGNA INMEDIATAMENTE PARA VISIBILIDAD
+      setFotoUrl(publicUrl);
 
       const { data: ticket, error: dbErr } = await supabase
         .from('lecturas_ia')
@@ -154,16 +154,17 @@ export default function IngresoACP() {
     
     setLoading(true);
     try {
+      // AQUÍ ESTÁ EL CAMBIO: Forzamos el uso de los estados actuales de React
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'INGRESO_ACP',
           valor_lectura: parseFloat(datos.totalizador), 
           foto_url: fotoUrl,
           observaciones: observaciones,
-          temperatura_c: parseFloat(datos.temperatura),
+          temperatura_c: parseFloat(datos.temperatura || 0),
           densidad_kg_l: 0.8936, 
           usuario_registro: 'Operador Entrada',
-          variedad: variedad,
-          es_reproceso: esReproceso
+          variedad: variedad,     // <--- Asegurado
+          es_reproceso: esReproceso // <--- Asegurado
       }]);
 
       if (error) throw error;
@@ -196,14 +197,11 @@ export default function IngresoACP() {
           <div className="flex flex-col items-center border-2 border-blue-900/30 rounded-[40px] p-10 bg-zinc-900/40">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-blue-500 font-black text-[11px] tracking-widest text-center">IA ANALIZANDO IMAGEN...</p>
-            
-            {/* LINK VISIBLE DURANTE PROCESAMIENTO */}
             {fotoUrl && (
               <a href={fotoUrl} target="_blank" className="mt-4 text-blue-400 text-[9px] font-black underline animate-pulse">
                 VER FOTO DE RESPALDO (CAPTURADA)
               </a>
             )}
-
             <button onClick={handleCancelar} className="mt-8 px-6 py-3 bg-red-600/20 text-red-500 border border-red-500/20 rounded-xl text-[9px] font-black uppercase">CANCELAR</button>
           </div>
         ) : !datos ? (
@@ -239,11 +237,6 @@ export default function IngresoACP() {
           </div>
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
-            {/* INDICADOR DE RECUPERACIÓN */}
-            <div className="text-center -mb-4">
-                <span className="text-[8px] font-black text-blue-500/50 tracking-tighter uppercase tracking-[0.2em]">Sincronizado con memoria local</span>
-            </div>
-
             <div className="flex gap-2">
                 <button 
                     onClick={() => setVariedad(variedad === 'ALTO OLEICO' ? 'GUINENSIS' : 'ALTO OLEICO')}
