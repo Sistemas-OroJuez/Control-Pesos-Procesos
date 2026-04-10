@@ -14,6 +14,7 @@ export default function IngresoACP() {
   const [observaciones, setObservaciones] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 1. ESCUCHAR CAMBIOS DE LA IA
   useEffect(() => {
     if (!ticketId) return;
     const channel = supabase
@@ -23,21 +24,23 @@ export default function IngresoACP() {
       }, (payload) => {
           if (payload.new.status === 'completado') {
             setDatos(payload.new);
-            setLoading(false);
+            setLoading(false); // SOLO AQUÍ LIBERAMOS EL BLOQUEO
             setTicketId(null);
           } else if (payload.new.status === 'error') {
             alert("Error IA: " + payload.new.ia_raw);
-            setLoading(false);
+            setLoading(false); // LIBERAMOS PARA REINTENTAR
             setTicketId(null);
           }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [ticketId]);
 
+  // 2. CAPTURA E INICIO DE PROCESO
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setLoading(true); // BLOQUEA LA INTERFAZ
+    
+    setLoading(true); // BLOQUEO TOTAL DE LA INTERFAZ
 
     try {
       const hoy = new Date().toISOString().split('T')[0];
@@ -64,24 +67,18 @@ export default function IngresoACP() {
 
       if (dbErr) throw dbErr;
       
-      // --- ESTO ES LO QUE FALTABA: EL DISPARADOR HACIA LA IA ---
-      setTicketId(ticket.id); // Activa el useEffect que escucha Supabase
+      setTicketId(ticket.id);
 
       const formData = new FormData();
       formData.append('file', file);
       formData.append('ticket_id', ticket.id);
 
-      // Llamada real a Hugging Face
-      const response = await fetch(IA_ENDPOINT, { 
-        method: "POST", 
-        body: formData 
-      });
-
-      if (!response.ok) throw new Error("Fallo en comunicación con servidor IA");
+      // Llamada real a Hugging Face sin desactivar loading
+      await fetch(IA_ENDPOINT, { method: "POST", body: formData });
 
     } catch (err: any) {
       alert("Error: " + err.message);
-      setLoading(false);
+      setLoading(false); // Solo liberamos si falla la subida inicial
       setTicketId(null);
     }
   };
@@ -116,19 +113,46 @@ export default function IngresoACP() {
     <div className="min-h-screen bg-black text-white p-4 font-sans uppercase">
       <div className="max-w-md mx-auto space-y-6">
         <header className="flex items-center py-4 border-b border-white/10 gap-4">
-          <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-zinc-900 border border-white/10 p-3 rounded-2xl flex items-center"><span className="text-[10px] font-black text-zinc-400">VOLVER</span></button>
+          <button 
+            onClick={() => {
+              setLoading(false);
+              window.location.href = DASHBOARD_URL;
+            }} 
+            className="bg-zinc-900 border border-white/10 p-3 rounded-2xl flex items-center"
+          >
+            <span className="text-[10px] font-black text-zinc-400">VOLVER</span>
+          </button>
           <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
         </header>
+
         {!datos ? (
+          /* ZONA DE CAPTURA CON BLOQUEO */
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
-            <button onClick={() => fileInputRef.current?.click()} disabled={loading} className={`w-32 h-32 rounded-full flex items-center justify-center ${loading ? 'bg-zinc-900 animate-pulse border-2 border-blue-500' : 'bg-blue-600 shadow-2xl shadow-blue-900/40'}`}>
-              {loading ? <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div> : "📸"}
-            </button>
-            <p className="mt-8 text-zinc-600 text-[11px] font-black text-center tracking-widest leading-tight">
-              {loading ? "LA IA ESTÁ ANALIZANDO..." : "CAPTURAR ENTRADA ACP"}
-            </p>
+            {loading ? (
+              /* MIENTRAS CARGA: Spinner y mensaje, NO botón */
+              <div className="flex flex-col items-center animate-pulse">
+                <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-blue-500 text-[11px] font-black tracking-widest text-center">
+                  IA ANALIZANDO... <br/> <span className="text-zinc-500 text-[9px]">ESPERA POR FAVOR</span>
+                </p>
+              </div>
+            ) : (
+              /* ESTADO NORMAL: Botón visible */
+              <>
+                <button 
+                  onClick={() => fileInputRef.current?.click()} 
+                  className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl shadow-blue-900/40"
+                >
+                  <span className="text-4xl">📸</span>
+                </button>
+                <p className="mt-8 text-zinc-600 text-[11px] font-black text-center tracking-widest leading-tight">
+                  CAPTURAR ENTRADA ACP
+                </p>
+              </>
+            )}
           </div>
         ) : (
+          /* RESULTADOS DE IA */
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR ENTRADA</p>
@@ -137,7 +161,7 @@ export default function IngresoACP() {
             </div>
             <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" placeholder="NOTAS..." />
             <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => {setDatos(null); setFotoUrl(null);}} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px]">RE-PROCESAR</button>
+                <button onClick={() => {setDatos(null); setFotoUrl(null); setLoading(false);}} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px]">RE-PROCESAR</button>
                 <button onClick={handleEnviarAlJefe} className="py-5 bg-orange-600/20 text-orange-500 rounded-2xl font-black text-[9px]">AVISAR JEFE</button>
             </div>
             <button onClick={handleConfirmarYGuardar} className="w-full py-6 bg-blue-600 rounded-2xl font-black text-xs tracking-[0.2em] shadow-lg">CONFIRMAR REGISTRO</button>
