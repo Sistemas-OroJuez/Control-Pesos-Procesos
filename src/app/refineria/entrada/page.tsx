@@ -19,7 +19,7 @@ export default function IngresoACP() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. RECUPERAR DATOS SI SE SALIÓ POR ACCIDENTE
+  // 1. RECUPERAR DATOS SI SE SALIÓ POR ACCIDENTE (LocalStorage + Supabase Check)
   useEffect(() => {
     const backup = localStorage.getItem('backup_ingreso_acp');
     if (backup) {
@@ -29,7 +29,6 @@ export default function IngresoACP() {
       setVariedad(parsed.variedad);
       setEsReproceso(parsed.esReproceso);
       setObservaciones(parsed.observaciones || '');
-      // No necesitamos buscar en Supabase si ya tenemos el backup local
       return;
     }
 
@@ -54,14 +53,14 @@ export default function IngresoACP() {
     verificarProcesoPendiente();
   }, []);
 
-  // 2. GUARDAR BACKUP LOCAL CADA VEZ QUE CAMBIAN LOS DATOS
+  // 2. GUARDAR BACKUP LOCAL AUTOMÁTICAMENTE CUANDO HAY CAMBIOS
   useEffect(() => {
-    if (datos && fotoUrl) {
+    if ((datos || ticketId) && fotoUrl) {
       localStorage.setItem('backup_ingreso_acp', JSON.stringify({
-        datos, fotoUrl, variedad, esReproceso, observaciones
+        datos, ticketId, fotoUrl, variedad, esReproceso, observaciones
       }));
     }
-  }, [datos, fotoUrl, variedad, esReproceso, observaciones]);
+  }, [datos, ticketId, fotoUrl, variedad, esReproceso, observaciones]);
 
   // 3. ESCUCHA DE RESULTADOS DE LA IA
   useEffect(() => {
@@ -84,7 +83,7 @@ export default function IngresoACP() {
   }, [ticketId]);
 
   const resetEstados = () => {
-    localStorage.removeItem('backup_ingreso_acp'); // Limpiar backup
+    localStorage.removeItem('backup_ingreso_acp'); 
     setLoading(false);
     setTicketId(null);
     setDatos(null);
@@ -109,7 +108,7 @@ export default function IngresoACP() {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    resetTodo(); // Limpiar cualquier backup anterior al tomar nueva foto
+    resetTodo(); 
     setLoading(true);
 
     try {
@@ -122,7 +121,7 @@ export default function IngresoACP() {
       if (upErr) throw upErr;
 
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
-      setFotoUrl(publicUrl);
+      setFotoUrl(publicUrl); // SE ASIGNA INMEDIATAMENTE PARA VISIBILIDAD
 
       const { data: ticket, error: dbErr } = await supabase
         .from('lecturas_ia')
@@ -169,7 +168,7 @@ export default function IngresoACP() {
 
       if (error) throw error;
       alert(`✅ REGISTRADO: ${variedad}${esReproceso ? ' (REPROCESO)' : ''}`);
-      resetTodo(); // Borrar backup local solo si se guardó con éxito
+      resetTodo(); 
     } catch (err: any) { 
         alert("Error al guardar: " + err.message); 
     } finally { 
@@ -197,6 +196,14 @@ export default function IngresoACP() {
           <div className="flex flex-col items-center border-2 border-blue-900/30 rounded-[40px] p-10 bg-zinc-900/40">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-blue-500 font-black text-[11px] tracking-widest text-center">IA ANALIZANDO IMAGEN...</p>
+            
+            {/* LINK VISIBLE DURANTE PROCESAMIENTO */}
+            {fotoUrl && (
+              <a href={fotoUrl} target="_blank" className="mt-4 text-blue-400 text-[9px] font-black underline animate-pulse">
+                VER FOTO DE RESPALDO (CAPTURADA)
+              </a>
+            )}
+
             <button onClick={handleCancelar} className="mt-8 px-6 py-3 bg-red-600/20 text-red-500 border border-red-500/20 rounded-xl text-[9px] font-black uppercase">CANCELAR</button>
           </div>
         ) : !datos ? (
