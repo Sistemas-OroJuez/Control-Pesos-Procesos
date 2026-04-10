@@ -3,7 +3,6 @@ import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const BUCKET_NAME = 'refineria_assets'; 
-// Asumimos que la IA usa el mismo endpoint, pero le pasamos el tipo de operación correcto.
 const IA_ENDPOINT = "https://orojuezsa-lector-ocr-industrial.hf.space/upload";
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
 
@@ -21,7 +20,6 @@ export default function SalidaRBD() {
 
   // 1. PERSISTENCIA
   useEffect(() => {
-    // Usamos una clave diferente en localStorage para no mezclar con entrada
     const backup = localStorage.getItem('backup_salida_rbd');
     if (backup) {
       const p = JSON.parse(backup);
@@ -83,7 +81,6 @@ export default function SalidaRBD() {
       const { count } = await supabase.from('lecturas_ia').select('*', { count: 'exact', head: true }).gte('created_at', hoy);
       const nuevoTicketNum = (count || 0) + 1;
 
-      // Nombre de archivo actualizado a 'salida_rbd'
       const fileName = `salida_rbd_${nuevoTicketNum}_${Date.now()}.jpg`; 
       const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, file);
       if (upErr) throw upErr;
@@ -97,7 +94,7 @@ export default function SalidaRBD() {
             status: 'procesando', 
             foto_url: publicUrl, 
             ticket_num: nuevoTicketNum, 
-            tipo_operacion: 'SALIDA_RBD' // Tipo de operación actualizado
+            tipo_operacion: 'SALIDA_RBD'
         })
         .select().single();
 
@@ -119,14 +116,13 @@ export default function SalidaRBD() {
     if (!datos || !fotoUrl) return;
     setLoading(true);
     try {
-      // Inserción en 'operaciones_refineria'
       const { error } = await supabase.from('operaciones_refineria').insert([{
-          tipo_operacion: 'SALIDA_RBD', // Tipo de operación actualizado
+          tipo_operacion: 'SALIDA_RBD',
           valor_lectura: parseFloat(datos.totalizador), 
           foto_url: fotoUrl,
           observaciones: observaciones,
           temperatura_c: parseFloat(datos.temperatura || 0),
-          densidad_kg_l: 0.8936, // Asumimos misma densidad o que la IA la da
+          densidad_kg_l: 0.8936, 
           usuario_registro: 'Operador Salida',
           variedad: variedad,
           es_reproceso: esReproceso
@@ -160,11 +156,9 @@ export default function SalidaRBD() {
           <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-zinc-900 border border-white/10 p-3 rounded-2xl">
             <span className="text-[10px] font-black text-zinc-400">VOLVER</span>
           </button>
-          {/* TÍTULO CAMBIADO Y COLOR A VERDE ESMERALDA */}
-          <h1 className="flex-1 text-emerald-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
+          <h1 className="flex-1 text-emerald-500 font-black text-[10px] tracking-[0.3em] text-center">SALIDA DE RBD</h1>
         </header>
 
-        {/* --- SELECTORES (BLOQUEADOS SI HAY DATOS) --- */}
         <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${datos ? 'opacity-40 pointer-events-none' : ''}`}>
            <div>
               <label className="text-[9px] font-black text-zinc-500 tracking-widest ml-2">VARIEDAD</label>
@@ -181,17 +175,14 @@ export default function SalidaRBD() {
            <button 
             onClick={() => setEsReproceso(!esReproceso)}
             disabled={!!datos}
-            {/* COLOR DE BORDE Y FONDO A VERDE ESMERALDA (cuando está activo) */}
             className={`w-full p-4 rounded-2xl border transition-all flex justify-between items-center ${esReproceso ? 'border-emerald-500 bg-emerald-500/10' : 'border-white/10 bg-black'}`}
            >
              <span className="text-[10px] font-black tracking-widest uppercase">{esReproceso ? 'ES REPROCESO ✅' : 'PROCESO NORMAL'}</span>
-             {/* COLOR DEL CÍRCULO A VERDE ESMERALDA (cuando está activo) */}
              <div className={`w-4 h-4 rounded-full ${esReproceso ? 'bg-emerald-500' : 'bg-zinc-800'}`}></div>
            </button>
         </div>
 
         {loading && !datos ? (
-          /* --- MODO ESPERA CON LINK A FOTO - COLOR DE BORDE Y SPIN A VERDE ESMERALDA --- */
           <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-emerald-900/30">
             <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-emerald-500 font-black text-[11px] tracking-widest uppercase mb-4">IA Procesando...</p>
@@ -203,26 +194,21 @@ export default function SalidaRBD() {
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
-            {/* COLOR DE BOTÓN Y SOMBRA A VERDE ESMERALDA */}
             <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-emerald-600 flex items-center justify-center shadow-2xl shadow-emerald-900/40">
               <span className="text-4xl">📸</span>
             </button>
             <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">TOMAR FOTO TOTALIZADOR</p>
           </div>
         ) : (
-          /* --- VISTA DE RESULTADOS (BLOQUEADA) --- */
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
                 <div className="flex justify-center gap-2 mb-4">
-                  {/* COLORES DE ETIQUETAS A VERDE ESMERALDA Y NARANJA */}
                   <span className="bg-emerald-500/10 text-emerald-500 text-[8px] border border-emerald-500/20 px-3 py-1 rounded-full font-black uppercase">{variedad}</span>
                   {esReproceso && <span className="bg-orange-500/10 text-orange-500 text-[8px] border border-orange-500/20 px-3 py-1 rounded-full font-black uppercase">REPROCESO</span>}
                 </div>
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">VALOR CAPTURADO</p>
-                {/* COLOR DE TEXTO DE LECTURA A VERDE ESMERALDA */}
                 <p className="text-6xl font-black text-emerald-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
                 <p className="text-[10px] text-zinc-600 font-bold uppercase">{datos.temperatura}°C | {datos.densidad || '0.8936'} KG/L</p>
-                {/* COLOR DE LINK A VERDE ESMERALDA */}
                 <a href={fotoUrl} target="_blank" className="text-[9px] text-emerald-500 underline block mt-2 font-bold tracking-widest">VER FOTO ORIGINAL</a>
             </div>
             
@@ -238,17 +224,12 @@ export default function SalidaRBD() {
                 <button onClick={handleEnviarAlJefe} className="py-5 bg-orange-600/20 text-orange-500 rounded-2xl font-black text-[9px] uppercase">AVISAR AL JEFE</button>
             </div>
             
-            {/* COLOR DE BOTÓN DE CONFIRMACIÓN A VERDE ESMERALDA Y SOMBRA */}
             <button 
               onClick={handleConfirmarYGuardar} 
               className="w-full py-6 bg-emerald-600 rounded-2xl font-black text-xs tracking-[0.2em] shadow-lg shadow-emerald-900/40 uppercase"
             >
               CONFIRMAR REGISTRO
             </button>
-
-            <p className="text-center text-[8px] text-zinc-600 font-bold px-4">
-              SI LA VARIEDAD O EL PROCESO SON INCORRECTOS, DEBE REINICIAR Y VOLVER A EMPEZAR O INFORMAR AL JEFE.
-            </p>
           </div>
         )}
         <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleCapture} className="hidden" />
