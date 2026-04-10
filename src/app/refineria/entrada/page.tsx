@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 const BUCKET_NAME = 'refineria_assets'; 
 const IA_ENDPOINT = "https://orojuezsa-lector-ocr-industrial.hf.space/upload";
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
-const TELEFONO_JEFE = "593987654321"; // Configura el número real aquí
+const TELEFONO_JEFE = "593987654321"; // <--- CAMBIA ESTO POR EL NÚMERO REAL
 
 export default function LectorIndustrial() {
   const [loading, setLoading] = useState(false);
@@ -50,7 +50,7 @@ export default function LectorIndustrial() {
     setLoading(true);
 
     try {
-      // 1. Obtener número secuencial de hoy
+      // 1. OBTENER NÚMERO SECUENCIAL (Lógica nueva)
       const hoy = new Date().toISOString().split('T')[0];
       const { count } = await supabase
         .from('lecturas_ia')
@@ -67,14 +67,14 @@ export default function LectorIndustrial() {
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
       setFotoUrl(publicUrl);
 
-      // 3. Crear Ticket en Tabla con número secuencial
+      // 3. Crear Ticket en Tabla con campos nuevos
       const { data: ticket, error: dbErr } = await supabase
         .from('lecturas_ia')
         .insert({ 
             status: 'procesando', 
             foto_url: publicUrl,
-            ticket_num: nuevoTicketNum,
-            revision_status: 'ia_ok'
+            ticket_num: nuevoTicketNum, // Campo nuevo
+            revision_status: 'ia_ok'    // Campo nuevo
         })
         .select().single();
 
@@ -99,7 +99,7 @@ export default function LectorIndustrial() {
   const handleEnviarAlJefe = async () => {
     if (!datos) return;
 
-    // Actualizar estado a naranja en Supabase
+    // Marcar como naranja en la DB
     await supabase
       .from('lecturas_ia')
       .update({ revision_status: 'pendiente_jefe' })
@@ -114,19 +114,6 @@ export default function LectorIndustrial() {
     window.open(`https://wa.me/${TELEFONO_JEFE}?text=${mensaje}`, '_blank');
     setDatos(null);
     setFotoUrl(null);
-  };
-
-  const reprocesarMismaFoto = async () => {
-    if (!fotoUrl || !datos) return;
-    setLoading(true);
-    setTicketId(datos.id);
-    setDatos(null);
-    
-    // Llamada simple para que la IA lo intente de nuevo
-    // Nota: Aquí se asume que guardaste el archivo o usas la URL
-    alert("Re-enviando señal a la IA...");
-    // Simulamos re-envío (en una versión Pro enviarías el blob de nuevo)
-    setLoading(false); 
   };
 
   const cancelarProceso = () => {
@@ -179,10 +166,11 @@ export default function LectorIndustrial() {
             )}
           </div>
         ) : (
+          /* PANEL DE RESULTADOS CON BOTONES NUEVOS */
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in shadow-2xl">
             <div className="flex justify-between items-center px-2">
-                <span className="text-[10px] font-bold text-zinc-500 tracking-widest">TICKET SECUENCIAL</span>
-                <span className="text-xl font-black text-white">#{datos.ticket_num}</span>
+                <span className="text-[10px] font-bold text-zinc-500 tracking-widest">TICKET #</span>
+                <span className="text-xl font-black text-white">{datos.ticket_num}</span>
             </div>
 
             <div className="text-center py-8 border-y border-white/5">
@@ -192,7 +180,7 @@ export default function LectorIndustrial() {
 
             <div className="grid grid-cols-2 gap-3">
                 <button 
-                    onClick={() => {setDatos(null); setFotoUrl(null);}}
+                    onClick={() => {setDatos(null); setTicketId(null); setFotoUrl(null);}}
                     className="py-5 bg-zinc-800 rounded-3xl font-black text-[9px] tracking-widest border border-white/5"
                 >
                     RE-PROCESAR
@@ -211,10 +199,6 @@ export default function LectorIndustrial() {
             >
                 CONFIRMAR Y FINALIZAR
             </button>
-            
-            <div className="text-center">
-                <a href={fotoUrl || '#'} target="_blank" className="text-[9px] text-zinc-500 underline underline-offset-4">REVISAR FOTO DE EVIDENCIA</a>
-            </div>
           </div>
         )}
 
