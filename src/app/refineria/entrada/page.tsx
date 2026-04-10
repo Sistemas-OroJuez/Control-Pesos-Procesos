@@ -12,6 +12,11 @@ export default function IngresoACP() {
   const [datos, setDatos] = useState<any>(null);
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
   const [observaciones, setObservaciones] = useState('');
+  
+  // NUEVOS ESTADOS PARA VARIEDAD Y REPROCESO
+  const [variedad, setVariedad] = useState('ALTO OLEICO');
+  const [esReproceso, setEsReproceso] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 1. PERSISTENCIA
@@ -62,6 +67,9 @@ export default function IngresoACP() {
     setTicketId(null);
     setDatos(null);
     setFotoUrl(null);
+    setObservaciones('');
+    setEsReproceso(false); // Limpiar reproceso
+    setVariedad('ALTO OLEICO'); // Reset variedad
   };
 
   const handleCancelar = async () => {
@@ -123,7 +131,9 @@ export default function IngresoACP() {
           observaciones: observaciones,
           temperatura_c: parseFloat(datos.temperatura),
           densidad_kg_l: 0.8900,
-          usuario_registro: 'Operador Entrada'
+          usuario_registro: 'Operador Entrada',
+          variedad: variedad,        // Guardar variedad
+          es_reproceso: esReproceso  // Guardar booleano de reproceso
       }]);
       if (error) throw error;
       alert("✅ INGRESO REGISTRADO");
@@ -134,7 +144,7 @@ export default function IngresoACP() {
 
   const handleEnviarAlJefe = async () => {
     if (!datos) return;
-    const mensaje = `🚨 *REVISIÓN INGRESO ACP* 🚨\n\n*Ticket:* #${datos.ticket_num}\n*Lectura:* ${datos.totalizador} kg\n*Temp:* ${datos.temperatura}°C\n\n*FOTO:* ${datos.foto_url || fotoUrl}`;
+    const mensaje = `🚨 *REVISIÓN INGRESO ACP* 🚨\n\n*Ticket:* #${datos.ticket_num}\n*Variedad:* ${variedad}\n*Reproceso:* ${esReproceso ? 'SÍ' : 'NO'}\n*Lectura:* ${datos.totalizador} kg\n*Temp:* ${datos.temperatura}°C\n\n*FOTO:* ${datos.foto_url || fotoUrl}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
   };
 
@@ -148,44 +158,58 @@ export default function IngresoACP() {
           <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
         </header>
 
-        {/* --- ESTADO: PROCESANDO --- */}
         {loading && !datos ? (
           <div className="flex flex-col items-center border-2 border-blue-900/30 rounded-[40px] p-10 bg-zinc-900/40">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-blue-500 font-black text-[11px] tracking-widest text-center">IA ANALIZANDO...</p>
-            
             {fotoUrl && (
-              <a href={fotoUrl} target="_blank" className="mt-4 text-blue-400 text-[9px] font-black underline tracking-widest">
-                VER FOTO ENVIADA
-              </a>
+              <a href={fotoUrl} target="_blank" className="mt-4 text-blue-400 text-[9px] font-black underline tracking-widest">VER FOTO ENVIADA</a>
             )}
-
-            <button 
-              onClick={handleCancelar}
-              className="mt-8 px-6 py-3 bg-red-600/20 text-red-500 border border-red-500/20 rounded-xl text-[9px] font-black tracking-widest"
-            >
-              CANCELAR PROCESO
-            </button>
+            <button onClick={handleCancelar} className="mt-8 px-6 py-3 bg-red-600/20 text-red-500 border border-red-500/20 rounded-xl text-[9px] font-black tracking-widest">CANCELAR PROCESO</button>
           </div>
         ) : !datos ? (
-          /* --- ESTADO: LISTO PARA FOTO --- */
-          <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
-            <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl shadow-blue-900/40">
-              <span className="text-4xl">📸</span>
-            </button>
-            <p className="mt-8 text-zinc-600 text-[11px] font-black text-center tracking-widest">CAPTURAR ENTRADA ACP</p>
+          <div className="space-y-6">
+            {/* SELECTORES INICIALES */}
+            <div className="bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4">
+               <div>
+                  <label className="text-[9px] font-black text-zinc-500 tracking-widest ml-2">VARIEDAD DE FRUTA</label>
+                  <select 
+                    value={variedad} 
+                    onChange={(e) => setVariedad(e.target.value)}
+                    className="w-full bg-black border border-white/10 rounded-2xl p-4 mt-2 text-xs font-bold text-white appearance-none focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="ALTO OLEICO">ALTO OLEICO</option>
+                    <option value="GUINENSIS">GUINENSIS</option>
+                  </select>
+               </div>
+               
+               <button 
+                onClick={() => setEsReproceso(!esReproceso)}
+                className={`w-full p-4 rounded-2xl border transition-all flex justify-between items-center ${esReproceso ? 'border-orange-500 bg-orange-500/10' : 'border-white/10 bg-black'}`}
+               >
+                 <span className="text-[10px] font-black tracking-widest uppercase">{esReproceso ? 'ES REPROCESO ✅' : '¿ES REPROCESO?'}</span>
+                 <div className={`w-4 h-4 rounded-full ${esReproceso ? 'bg-orange-500' : 'bg-zinc-800'}`}></div>
+               </button>
+            </div>
+
+            <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
+              <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl shadow-blue-900/40">
+                <span className="text-4xl">📸</span>
+              </button>
+              <p className="mt-8 text-zinc-600 text-[11px] font-black text-center tracking-widest uppercase">CAPTURAR ENTRADA ACP</p>
+            </div>
           </div>
         ) : (
-          /* --- ESTADO: RESULTADOS --- */
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
+                <div className="flex justify-center gap-2 mb-2">
+                  <span className="bg-blue-500/10 text-blue-500 text-[8px] font-black px-3 py-1 rounded-full border border-blue-500/20 uppercase">{variedad}</span>
+                  {esReproceso && <span className="bg-orange-500/10 text-orange-500 text-[8px] font-black px-3 py-1 rounded-full border border-orange-500/20">REPROCESO</span>}
+                </div>
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR ENTRADA</p>
                 <p className="text-6xl font-black text-blue-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
                 <p className="text-[10px] text-zinc-600 font-bold uppercase">{datos.temperatura}°C</p>
-                
-                <a href={datos.foto_url || fotoUrl} target="_blank" className="mt-2 inline-block text-blue-400 text-[9px] font-black underline tracking-widest">
-                  VER FOTO DE RESPALDO
-                </a>
+                <a href={datos.foto_url || fotoUrl} target="_blank" className="mt-2 inline-block text-blue-400 text-[9px] font-black underline tracking-widest">VER FOTO DE RESPALDO</a>
             </div>
             
             <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" placeholder="NOTAS..." />
