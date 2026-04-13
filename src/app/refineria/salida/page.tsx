@@ -17,7 +17,7 @@ export default function SalidaRBD() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA PARA NO PERDER DATOS (Clave única para Salida RBD)
+  // PERSISTENCIA PARA NO PERDER DATOS (Clave específica para Salida RBD)
   useEffect(() => {
     const backup = localStorage.getItem('backup_salida_rbd');
     if (backup) {
@@ -103,15 +103,15 @@ export default function SalidaRBD() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
 
-      // --- LÓGICA ELÁSTICA PARA CRECIMIENTO DEL CONTADOR ---
-      // Filtramos cualquier bloque numérico de 4 o más dígitos (sin techo de 7 u 8).
+      // --- CAMBIO CLAVE: LÓGICA DE DÍGITOS AMPLIADA ---
+      // Eliminamos el límite superior. Ahora acepta cualquier bloque de 4 dígitos o más (7, 8, 9, 10...).
       const bloquesNumericos = textRaw.split('\n')
         .map((l: string) => l.replace(/[^0-9]/g, '')) 
         .filter((l: string) => l.length >= 4); 
 
       let valorFinal = "0";
 
-      // El totalizador (Σ1) es el segundo bloque en el visor.
+      // El totalizador (Σ1) es usualmente la segunda línea de datos grandes en el visor
       if (bloquesNumericos.length >= 2) {
         valorFinal = bloquesNumericos[1]; 
       } else if (bloquesNumericos.length === 1) {
@@ -158,6 +158,7 @@ export default function SalidaRBD() {
           <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-zinc-900 border border-white/10 p-3 rounded-2xl">
             <span className="text-[10px] font-black text-zinc-400">VOLVER</span>
           </button>
+          {/* TÍTULO ACTUALIZADO Y COLOR ESMERALDA */}
           <h1 className="flex-1 text-emerald-500 font-black text-[10px] tracking-[0.3em] text-center">SALIDA RBD OROJUEZ</h1>
         </header>
 
@@ -191,6 +192,7 @@ export default function SalidaRBD() {
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
+            {/* BOTÓN EN COLOR ESMERALDA */}
             <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-emerald-600 flex items-center justify-center shadow-2xl">
               <span className="text-4xl">📸</span>
             </button>
@@ -200,6 +202,7 @@ export default function SalidaRBD() {
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
+                {/* TEXTO RESULTADO EN ESMERALDA */}
                 <p className="text-6xl font-black text-emerald-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
                 <a href={fotoUrl!} target="_blank" className="text-[10px] text-emerald-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
