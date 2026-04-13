@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 const BUCKET_NAME = 'refineria_assets'; 
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
 const OCR_API_KEY = 'K82540315988957'; 
-const JEFE_WHATSAPP = "593987654321"; // Reemplaza con el número real del jefe
+const JEFE_WHATSAPP = "593963864268"; // Reemplaza con el número real del jefe
 
 export default function EntradaACP() {
   const [loading, setLoading] = useState(false);
