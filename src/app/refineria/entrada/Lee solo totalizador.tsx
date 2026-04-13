@@ -17,7 +17,7 @@ export default function IngresoACP() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA
+  // PERSISTENCIA PARA NO PERDER DATOS
   useEffect(() => {
     const backup = localStorage.getItem('backup_ingreso_acp');
     if (backup) {
@@ -75,10 +75,12 @@ export default function IngresoACP() {
     if (!file) return;
 
     setLoading(true);
-    setStatusText('Analizando variables...');
+    setStatusText('Optimizando Imagen...');
 
     try {
       const blob = await compressImage(file);
+      
+      setStatusText('Subiendo Archivo...');
       const fileName = `ingreso_${Date.now()}.jpg`;
       const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, blob);
       if (upErr) throw upErr;
@@ -86,27 +88,39 @@ export default function IngresoACP() {
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
       setFotoUrl(publicUrl);
 
+      setStatusText('Analizando con IA...');
       const formData = new FormData();
       formData.append('apikey', OCR_API_KEY);
       formData.append('url', publicUrl);
       formData.append('language', 'eng');
       formData.append('OCREngine', '2'); 
 
-      const res = await fetch('https://api.ocr.space/parse/image', { method: 'POST', body: formData });
+      const res = await fetch('https://api.ocr.space/parse/image', {
+        method: 'POST',
+        body: formData
+      });
+
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
 
-      // LÓGICA DE EXTRACCIÓN MULTI-VARIABLE
-      const lineas = textRaw.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
-      const v = lineas.map((l: string) => l.replace(/[^0-9.]/g, ''));
+      // --- LÓGICA DE SALTO DE FILA (SOLUCIÓN AL ERROR DE LECTURA) ---
+      // 1. Separamos por líneas y extraemos solo los bloques numéricos
+      const bloquesNumericos = textRaw.split('\n')
+        .map((l: string) => l.replace(/[^0-9]/g, '')) 
+        .filter((l: string) => l.length >= 7); // Filtramos para tener solo números tipo totalizador/flujo
 
-      // Asignación basada en la estructura del visor:
-      // Fila 0: Masa | Fila 1: Totalizador | Fila 2: Temp | Fila 3: Densidad
+      let valorFinal = "0";
+
+      // 2. Si detectamos 2 o más bloques, el totalizador (Σ1) es SIEMPRE el segundo bloque
+      if (bloquesNumericos.length >= 2) {
+        valorFinal = bloquesNumericos[1]; // Salta la fila 1 y toma la fila 2
+      } else if (bloquesNumericos.length === 1) {
+        valorFinal = bloquesNumericos[0];
+      }
+
       setDatos({
-        masa_kg_h: v[0] || "0",
-        totalizador: v[1] || "0",
-        temperatura_c: v[2] || "0",
-        densidad_kg_l: v[3] || "0"
+        totalizador: valorFinal,
+        status: 'completado'
       });
 
     } catch (err: any) {
@@ -124,9 +138,6 @@ export default function IngresoACP() {
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'INGRESO_ACP',
           valor_lectura: parseFloat(datos.totalizador), 
-          masa_kg_h: parseFloat(datos.masa_kg_h),
-          temperatura_c: parseFloat(datos.temperatura_c),
-          densidad_kg_l: parseFloat(datos.densidad_kg_l),
           foto_url: fotoUrl,
           observaciones: observaciones,
           usuario_registro: 'Operador Entrada',
@@ -134,7 +145,7 @@ export default function IngresoACP() {
           es_reproceso: esReproceso
       }]);
       if (error) throw error;
-      alert("✅ REGISTRO COMPLETO");
+      alert("✅ REGISTRO EXITOSO");
       resetTodo(); 
     } catch (err: any) { alert(err.message); }
     finally { setLoading(false); }
@@ -150,13 +161,20 @@ export default function IngresoACP() {
           <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
         </header>
 
-        {/* SELECTORES */}
+        {/* SELECTORES BLOQUEADOS DURANTE PROCESO */}
         <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${(datos || loading) ? 'opacity-40 pointer-events-none' : ''}`}>
-           <select value={variedad} onChange={(e) => setVariedad(e.target.value)} className="w-full bg-black border border-white/10 rounded-2xl p-4 text-xs font-bold text-white focus:outline-none uppercase">
+           <select 
+              value={variedad} 
+              onChange={(e) => setVariedad(e.target.value)}
+              className="w-full bg-black border border-white/10 rounded-2xl p-4 text-xs font-bold text-white focus:outline-none"
+            >
               <option value="ALTO OLEICO">ALTO OLEICO</option>
               <option value="GUINENSIS">GUINENSIS</option>
             </select>
-           <button onClick={() => setEsReproceso(!esReproceso)} className={`w-full p-4 rounded-2xl border flex justify-between items-center ${esReproceso ? 'border-orange-500 bg-orange-500/10' : 'border-white/10 bg-black'}`}>
+           <button 
+            onClick={() => setEsReproceso(!esReproceso)}
+            className={`w-full p-4 rounded-2xl border flex justify-between items-center ${esReproceso ? 'border-orange-500 bg-orange-500/10' : 'border-white/10 bg-black'}`}
+           >
              <span className="text-[10px] font-black tracking-widest">{esReproceso ? 'ES REPROCESO ✅' : 'PROCESO NORMAL'}</span>
              <div className={`w-4 h-4 rounded-full ${esReproceso ? 'bg-orange-500' : 'bg-zinc-800'}`}></div>
            </button>
@@ -165,41 +183,38 @@ export default function IngresoACP() {
         {loading ? (
           <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-blue-900/30">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-            <p className="text-blue-500 font-black text-[11px] tracking-widest uppercase">{statusText}</p>
+            <p className="text-blue-500 font-black text-[11px] tracking-widest uppercase mb-4">{statusText}</p>
+            {fotoUrl && (
+              <a href={fotoUrl} target="_blank" className="text-[10px] bg-blue-500/10 text-blue-400 px-4 py-2 rounded-full border border-blue-500/20 font-bold animate-pulse">
+                🔗 VER CAPTURA SUBIDA
+              </a>
+            )}
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
             <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl">
               <span className="text-4xl">📸</span>
             </button>
-            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">ESCANEAR MEDIDOR</p>
+            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">CAPTURAR INGRESO</p>
           </div>
         ) : (
-          <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6">
-            <div className="grid grid-cols-2 gap-4 border-b border-white/5 pb-6">
-                <div className="text-center bg-black/20 p-3 rounded-2xl border border-white/5">
-                    <p className="text-[8px] text-zinc-500 font-bold tracking-widest">MASA (KG/H)</p>
-                    <p className="text-xl font-black text-white tabular-nums">{datos.masa_kg_h}</p>
-                </div>
-                <div className="text-center bg-black/20 p-3 rounded-2xl border border-white/5">
-                    <p className="text-[8px] text-zinc-500 font-bold tracking-widest">TEMP (°C)</p>
-                    <p className="text-xl font-black text-white tabular-nums">{datos.temperatura_c}</p>
-                </div>
-                <div className="col-span-2 text-center py-6 bg-blue-500/5 rounded-3xl border border-blue-500/20 shadow-inner">
-                    <p className="text-[10px] text-blue-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
-                    <p className="text-5xl font-black text-blue-400 tabular-nums tracking-tighter">{datos.totalizador}</p>
-                </div>
-                <div className="col-span-2 text-center bg-black/20 p-3 rounded-2xl border border-white/5">
-                    <p className="text-[8px] text-zinc-500 font-bold tracking-widest">DENSIDAD (KG/L)</p>
-                    <p className="text-lg font-black text-white tabular-nums">{datos.densidad_kg_l}</p>
-                </div>
+          <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
+            <div className="text-center py-4 border-b border-white/5">
+                <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
+                <p className="text-6xl font-black text-blue-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
+                <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
             
-            <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" placeholder="NOTAS ADICIONALES..." />
+            <textarea 
+              value={observaciones} 
+              onChange={(e) => setObservaciones(e.target.value)} 
+              className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" 
+              placeholder="NOTAS ADICIONALES..." 
+            />
             
             <div className="grid grid-cols-2 gap-3">
-                <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400 uppercase">Reintentar</button>
-                <button onClick={handleConfirmarYGuardar} className="py-5 bg-blue-600 rounded-2xl font-black text-[9px] uppercase">Guardar</button>
+                <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400">REINTENTAR</button>
+                <button onClick={handleConfirmarYGuardar} className="py-5 bg-blue-600 rounded-2xl font-black text-[9px]">CONFIRMAR</button>
             </div>
           </div>
         )}
