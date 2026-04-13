@@ -8,7 +8,7 @@ const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
 export default function AcidoGraso() {
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
-  const [datos, setDatos] = useState<any>(null); // Usado para manejar el estado de "foto capturada"
+  const [datos, setDatos] = useState<any>(null); 
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
   const [vacioLectura, setVacioLectura] = useState<number>(0);
   const [tanque, setTanque] = useState<'T1' | 'T2'>('T1');
@@ -18,13 +18,11 @@ export default function AcidoGraso() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Configuración de Tanques
   const CONFIG_TANQUES = {
     T1: { factor: 107, alturaMax: 488 },
     T2: { factor: 211, alturaMax: 610 }
   };
 
-  // Cálculo de KG automáticos
   const calcularKg = () => {
     const config = CONFIG_TANQUES[tanque];
     const alturaReal = config.alturaMax - vacioLectura;
@@ -32,26 +30,30 @@ export default function AcidoGraso() {
     return kgResult > 0 ? kgResult : 0;
   };
 
-  // PERSISTENCIA
+  // PERSISTENCIA LOCAL
   useEffect(() => {
     const backup = localStorage.getItem('backup_acido_graso');
     if (backup) {
       const p = JSON.parse(backup);
-      setDatos(p.datos);
-      setFotoUrl(p.fotoUrl);
-      setVacioLectura(p.vacioLectura || 0);
-      setTanque(p.tanque || 'T1');
-      setVariedad(p.variedad || 'ALTO OLEICO');
-      setEsReproceso(p.esReproceso || false);
-      setObservaciones(p.observaciones || '');
+      if (p.fotoUrl) {
+        setDatos({ status: 'capturado' });
+        setFotoUrl(p.fotoUrl);
+        setVacioLectura(p.vacioLectura || 0);
+        setTanque(p.tanque || 'T1');
+        setVariedad(p.variedad || 'ALTO OLEICO');
+        setEsReproceso(p.esReproceso || false);
+        setObservaciones(p.observaciones || '');
+      }
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('backup_acido_graso', JSON.stringify({
-      datos, fotoUrl, vacioLectura, tanque, variedad, esReproceso, observaciones
-    }));
-  }, [datos, fotoUrl, vacioLectura, tanque, variedad, esReproceso, observaciones]);
+    if (fotoUrl) {
+      localStorage.setItem('backup_acido_graso', JSON.stringify({
+        fotoUrl, vacioLectura, tanque, variedad, esReproceso, observaciones
+      }));
+    }
+  }, [fotoUrl, vacioLectura, tanque, variedad, esReproceso, observaciones]);
 
   const resetTodo = () => {
     localStorage.removeItem('backup_acido_graso'); 
@@ -71,15 +73,15 @@ export default function AcidoGraso() {
     setStatusText('Subiendo Evidencia...');
 
     try {
-      const fileName = `acido_graso_${Date.now()}.jpg`;
+      const fileName = `evidencia_acido_${Date.now()}.jpg`;
       const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, file);
       if (upErr) throw upErr;
 
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
       setFotoUrl(publicUrl);
-      setDatos({ status: 'capturado' }); // Marca que ya hay una foto lista
+      setDatos({ status: 'capturado' }); 
     } catch (err: any) {
-      alert("Error: " + err.message);
+      alert("Error al subir imagen: " + err.message);
     } finally {
       setLoading(false);
       setStatusText('');
@@ -87,6 +89,11 @@ export default function AcidoGraso() {
   };
 
   const handleConfirmarYGuardar = async () => {
+    if (!fotoUrl) {
+      alert("Por favor, capture la foto de evidencia primero.");
+      return;
+    }
+
     const kgFinales = calcularKg();
     setLoading(true);
     try {
@@ -102,7 +109,7 @@ export default function AcidoGraso() {
           es_reproceso: esReproceso
       }]);
       if (error) throw error;
-      alert("✅ REGISTRO EXITOSO");
+      alert("✅ REGISTRO GUARDADO EN BASE DE DATOS");
       resetTodo(); 
     } catch (err: any) { alert(err.message); }
     finally { setLoading(false); }
@@ -117,7 +124,7 @@ export default function AcidoGraso() {
                 `*Variedad:* ${variedad}%0A` +
                 `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
                 `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
-                `*Foto:* ${fotoUrl || 'No adjunta'}`;
+                `*Evidencia:* ${fotoUrl || 'No adjunta'}`;
     window.open(`https://wa.me/?text=${msg}`, '_blank');
   };
 
@@ -131,11 +138,10 @@ export default function AcidoGraso() {
           <h1 className="flex-1 text-orange-500 font-black text-[10px] tracking-[0.3em] text-center">ÁCIDO GRASO OROJUEZ</h1>
         </header>
 
-        {/* SELECTORES DE CONFIGURACIÓN */}
         <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${(datos || loading) ? 'opacity-40 pointer-events-none' : ''}`}>
            <div className="grid grid-cols-2 gap-3">
-             <button onClick={() => setTanque('T1')} className={`py-4 rounded-2xl font-black text-[10px] border ${tanque === 'T1' ? 'border-orange-500 bg-orange-500/10 text-orange-500' : 'border-white/5 bg-black'}`}>TANQUE T1</button>
-             <button onClick={() => setTanque('T2')} className={`py-4 rounded-2xl font-black text-[10px] border ${tanque === 'T2' ? 'border-orange-500 bg-orange-500/10 text-orange-500' : 'border-white/5 bg-black'}`}>TANQUE T2</button>
+             <button onClick={() => setTanque('T1')} className={`py-4 rounded-2xl font-black text-[10px] border ${tanque === 'T1' ? 'border-orange-500 bg-orange-500/10 text-orange-500' : 'border-white/5 bg-black text-zinc-600'}`}>TANQUE T1</button>
+             <button onClick={() => setTanque('T2')} className={`py-4 rounded-2xl font-black text-[10px] border ${tanque === 'T2' ? 'border-orange-500 bg-orange-500/10 text-orange-500' : 'border-white/5 bg-black text-zinc-600'}`}>TANQUE T2</button>
            </div>
            
            <select value={variedad} onChange={(e) => setVariedad(e.target.value)} className="w-full bg-black border border-white/10 rounded-2xl p-4 text-xs font-bold text-white focus:outline-none">
@@ -159,7 +165,7 @@ export default function AcidoGraso() {
             <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-orange-600 flex items-center justify-center shadow-2xl">
               <span className="text-4xl">📸</span>
             </button>
-            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">CAPTURAR EVIDENCIA VACÍO</p>
+            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">CAPTURAR FOTO EVIDENCIA</p>
           </div>
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
@@ -172,28 +178,28 @@ export default function AcidoGraso() {
                   className="w-full bg-transparent text-6xl font-black text-orange-500 tracking-tighter tabular-nums text-center focus:outline-none"
                   placeholder="0"
                 />
-                <div className="mt-4 p-3 bg-black/50 rounded-2xl">
-                  <p className="text-[9px] text-zinc-500 font-bold">PESO CALCULADO</p>
-                  <p className="text-2xl font-black text-white">{calcularKg().toLocaleString()} KG</p>
+                <div className="mt-4 p-4 bg-black/50 rounded-2xl border border-white/5">
+                  <p className="text-[9px] text-zinc-500 font-bold tracking-widest">PESO NETO CALCULADO</p>
+                  <p className="text-3xl font-black text-white">{calcularKg().toLocaleString()} KG</p>
                 </div>
-                <a href={fotoUrl!} target="_blank" className="text-[10px] text-orange-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR EVIDENCIA</a>
+                <a href={fotoUrl!} target="_blank" className="text-[10px] text-orange-500 underline block mt-4 font-black tracking-widest">VER FOTO CAPTURADA</a>
             </div>
             
             <textarea 
               value={observaciones} 
               onChange={(e) => setObservaciones(e.target.value)} 
-              className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" 
-              placeholder="NOTAS ADICIONALES..." 
+              className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5 focus:border-orange-500/50 outline-none" 
+              placeholder="NOTAS DE LA OPERACIÓN..." 
             />
 
             <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3">
               <span className="text-lg">💬</span>
-              <span className="text-[10px] font-black text-emerald-400">ENVIAR REPORTE POR WHATSAPP</span>
+              <span className="text-[10px] font-black text-emerald-400">NOTIFICAR POR WHATSAPP</span>
             </button>
             
             <div className="grid grid-cols-2 gap-3">
-                <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400">REPROCESAR (FOTO)</button>
-                <button onClick={handleConfirmarYGuardar} className="py-5 bg-orange-600 rounded-2xl font-black text-[9px]">GUARDAR REGISTRO</button>
+                <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400 hover:bg-zinc-700">REPROCESAR FOTO</button>
+                <button onClick={handleConfirmarYGuardar} className="py-5 bg-orange-600 rounded-2xl font-black text-[9px] hover:bg-orange-500 transition-colors">GUARDAR REGISTRO</button>
             </div>
           </div>
         )}
