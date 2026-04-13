@@ -103,13 +103,15 @@ export default function SalidaRBD() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
 
-      // --- LÓGICA DE SALTO DE FILA (SOLUCIÓN AL ERROR DE LECTURA) ---
+      // --- LÓGICA ELÁSTICA PARA CRECIMIENTO DEL CONTADOR ---
+      // Filtramos cualquier bloque numérico de 4 o más dígitos (sin techo de 7 u 8).
       const bloquesNumericos = textRaw.split('\n')
         .map((l: string) => l.replace(/[^0-9]/g, '')) 
-        .filter((l: string) => l.length >= 7); 
+        .filter((l: string) => l.length >= 4); 
 
       let valorFinal = "0";
 
+      // El totalizador (Σ1) es el segundo bloque en el visor.
       if (bloquesNumericos.length >= 2) {
         valorFinal = bloquesNumericos[1]; 
       } else if (bloquesNumericos.length === 1) {
