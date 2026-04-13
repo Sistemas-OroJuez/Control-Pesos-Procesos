@@ -103,19 +103,17 @@ export default function IngresoACP() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
 
-      // --- MEJORA: LÓGICA DINÁMICA (SIN LÍMITE DE DÍGITOS) ---
-      // 1. Extraemos bloques numéricos que tengan 4 o más dígitos
-      // Esto permite capturar desde miles hasta cientos de millones sin cambios manuales.
+      // --- LÓGICA DE SALTO DE FILA (SOLUCIÓN AL ERROR DE LECTURA) ---
+      // 1. Separamos por líneas y extraemos solo los bloques numéricos
       const bloquesNumericos = textRaw.split('\n')
         .map((l: string) => l.replace(/[^0-9]/g, '')) 
-        .filter((l: string) => l.length >= 4); 
+        .filter((l: string) => l.length >= 7); // Filtramos para tener solo números tipo totalizador/flujo
 
       let valorFinal = "0";
 
-      // 2. Basado en el visor del medidor masivo:
-      // El totalizador (Σ1) suele ser el segundo bloque detectado de arriba hacia abajo.
+      // 2. Si detectamos 2 o más bloques, el totalizador (Σ1) es SIEMPRE el segundo bloque
       if (bloquesNumericos.length >= 2) {
-        valorFinal = bloquesNumericos[1]; // Toma la fila 2 (Totalizador)
+        valorFinal = bloquesNumericos[1]; // Salta la fila 1 y toma la fila 2
       } else if (bloquesNumericos.length === 1) {
         valorFinal = bloquesNumericos[0];
       }
@@ -163,6 +161,7 @@ export default function IngresoACP() {
           <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
         </header>
 
+        {/* SELECTORES BLOQUEADOS DURANTE PROCESO */}
         <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${(datos || loading) ? 'opacity-40 pointer-events-none' : ''}`}>
            <select 
               value={variedad} 
