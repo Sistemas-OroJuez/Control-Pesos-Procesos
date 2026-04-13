@@ -103,26 +103,19 @@ export default function IngresoACP() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
 
-      // --- MEJORA DE LÓGICA DE EXTRACCIÓN ---
-      // 1. Extraemos todos los bloques de números largos (7 o más dígitos)
-      const todosLosNumeros = textRaw.match(/\d{7,}/g) || [];
+      // --- LÓGICA DE SALTO DE FILA (SOLUCIÓN AL ERROR DE LECTURA) ---
+      // 1. Separamos por líneas y extraemos solo los bloques numéricos
+      const bloquesNumericos = textRaw.split('\n')
+        .map((l: string) => l.replace(/[^0-9]/g, '')) 
+        .filter((l: string) => l.length >= 7); // Filtramos para tener solo números tipo totalizador/flujo
 
       let valorFinal = "0";
 
-      if (todosLosNumeros.length > 0) {
-        // 2. El Totalizador es SIEMPRE el número más grande (numéricamente) de la pantalla
-        // Esto evita confundirlo con el flujo o números parciales
-        const numerosOrdenados = todosLosNumeros.map(n => parseInt(n)).sort((a, b) => b - a);
-        valorFinal = numerosOrdenados[0].toString();
-      } else {
-        // Fallback: si no encuentra largos, busca el bloque más grande que tenga
-        const bloquesFallback = textRaw.split(/[\s\n]+/)
-          .map((l: string) => l.replace(/[^0-9]/g, ''))
-          .filter((l: string) => l.length >= 4);
-        
-        if (bloquesFallback.length > 0) {
-          valorFinal = bloquesFallback.sort((a, b) => b.length - a.length)[0];
-        }
+      // 2. Si detectamos 2 o más bloques, el totalizador (Σ1) es SIEMPRE el segundo bloque
+      if (bloquesNumericos.length >= 2) {
+        valorFinal = bloquesNumericos[1]; // Salta la fila 1 y toma la fila 2
+      } else if (bloquesNumericos.length === 1) {
+        valorFinal = bloquesNumericos[0];
       }
 
       setDatos({
@@ -168,6 +161,7 @@ export default function IngresoACP() {
           <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
         </header>
 
+        {/* SELECTORES BLOQUEADOS DURANTE PROCESO */}
         <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${(datos || loading) ? 'opacity-40 pointer-events-none' : ''}`}>
            <select 
               value={variedad} 
