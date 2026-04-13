@@ -103,44 +103,30 @@ export default function IngresoACP() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
 
-      // --- LÓGICA DE EXTRACCIÓN INTELIGENTE ---
-      // Limpiamos el texto y nos quedamos con bloques que tengan números o puntos
-      const bloques = textRaw.split(/[\s\n]+/)
-        .map((b: string) => b.replace(/[^0-9.]/g, ''))
-        .filter((b: string) => b.length >= 2);
+      // --- MEJORA DE LÓGICA DE EXTRACCIÓN ---
+      // 1. Extraemos todos los bloques de números largos (7 o más dígitos)
+      const todosLosNumeros = textRaw.match(/\d{7,}/g) || [];
 
-      let m_kg_h = "0";
-      let total = "0";
-      let temp = "0";
-      let dens = "0.8936";
+      let valorFinal = "0";
 
-      // 1. Identificar Totalizador: suele ser el número más largo (> 6 dígitos)
-      const masLargo = [...bloques].sort((a, b) => b.length - a.length)[0];
-      if (masLargo && masLargo.length >= 6) total = masLargo;
-
-      // 2. Identificar Densidad: número que empieza con 0.8 o 0.9
-      const dFound = bloques.find(b => b.startsWith('0.8') || b.startsWith('0.9'));
-      if (dFound) dens = dFound;
-
-      // 3. Identificar Temperatura y Masa por rangos y longitud
-      bloques.forEach(b => {
-        if (b === total || b === dFound) return;
-        const val = parseFloat(b);
-        // Si tiene 2 dígitos y está en rango de temperatura
-        if (b.length <= 3 && val > 15 && val < 95) {
-          temp = b;
-        } 
-        // Si tiene decimales y es un número mayor, es la masa
-        else if (b.includes('.') && val > 100) {
-          m_kg_h = b;
+      if (todosLosNumeros.length > 0) {
+        // 2. El Totalizador es SIEMPRE el número más grande (numéricamente) de la pantalla
+        // Esto evita confundirlo con el flujo o números parciales
+        const numerosOrdenados = todosLosNumeros.map(n => parseInt(n)).sort((a, b) => b - a);
+        valorFinal = numerosOrdenados[0].toString();
+      } else {
+        // Fallback: si no encuentra largos, busca el bloque más grande que tenga
+        const bloquesFallback = textRaw.split(/[\s\n]+/)
+          .map((l: string) => l.replace(/[^0-9]/g, ''))
+          .filter((l: string) => l.length >= 4);
+        
+        if (bloquesFallback.length > 0) {
+          valorFinal = bloquesFallback.sort((a, b) => b.length - a.length)[0];
         }
-      });
+      }
 
       setDatos({
-        totalizador: total,
-        masa_kg_h: m_kg_h,
-        temperatura_c: temp,
-        densidad_kg_l: dens,
+        totalizador: valorFinal,
         status: 'completado'
       });
 
@@ -159,9 +145,6 @@ export default function IngresoACP() {
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'INGRESO_ACP',
           valor_lectura: parseFloat(datos.totalizador), 
-          masa_kg_h: parseFloat(datos.masa_kg_h),
-          temperatura_c: parseFloat(datos.temperatura_c),
-          densidad_kg_l: parseFloat(datos.densidad_kg_l),
           foto_url: fotoUrl,
           observaciones: observaciones,
           usuario_registro: 'Operador Entrada',
@@ -207,6 +190,11 @@ export default function IngresoACP() {
           <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-blue-900/30">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-blue-500 font-black text-[11px] tracking-widest uppercase mb-4">{statusText}</p>
+            {fotoUrl && (
+              <a href={fotoUrl} target="_blank" className="text-[10px] bg-blue-500/10 text-blue-400 px-4 py-2 rounded-full border border-blue-500/20 font-bold animate-pulse">
+                🔗 VER CAPTURA SUBIDA
+              </a>
+            )}
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
@@ -217,21 +205,12 @@ export default function IngresoACP() {
           </div>
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
-            <div className="grid grid-cols-2 gap-4">
-                <div className="text-center p-3 bg-black/20 rounded-2xl border border-white/5">
-                    <p className="text-[8px] text-zinc-500 font-bold">MASA (KG/H)</p>
-                    <p className="text-lg font-black">{datos.masa_kg_h}</p>
-                </div>
-                <div className="text-center p-3 bg-black/20 rounded-2xl border border-white/5">
-                    <p className="text-[8px] text-zinc-500 font-bold">TEMP (°C)</p>
-                    <p className="text-lg font-black">{datos.temperatura_c}</p>
-                </div>
-                <div className="col-span-2 text-center py-6 bg-blue-500/5 rounded-3xl border border-blue-500/20">
-                    <p className="text-[11px] text-blue-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
-                    <p className="text-5xl font-black text-blue-400 tabular-nums">{datos.totalizador}</p>
-                </div>
+            <div className="text-center py-4 border-b border-white/5">
+                <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
+                <p className="text-6xl font-black text-blue-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
+                <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
-
+            
             <textarea 
               value={observaciones} 
               onChange={(e) => setObservaciones(e.target.value)} 
