@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 const BUCKET_NAME = 'refineria_assets'; 
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
 const OCR_API_KEY = 'K82540315988957'; 
+const JEFE_WHATSAPP = "593963864268"; // Reemplaza con el número real del jefe
 
 export default function EntradaACP() {
   const [loading, setLoading] = useState(false);
@@ -158,10 +159,8 @@ export default function EntradaACP() {
                 `*Lectura:* ${datos.totalizador}%0A` +
                 `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
                 `*Variedad:* ${variedad}%0A` +
-                `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
                 `*Foto:* ${fotoUrl}`;
-    // Al no incluir número en la URL, WhatsApp permite elegir el contacto
-    window.open(`https://wa.me/?text=${msg}`, '_blank');
+    window.open(`https://wa.me/${JEFE_WHATSAPP}?text=${msg}`, '_blank');
   };
 
   return (
@@ -196,6 +195,7 @@ export default function EntradaACP() {
           <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-blue-900/30">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-blue-500 font-black text-[11px] tracking-widest uppercase mb-4">{statusText}</p>
+            {/* LINK SIEMPRE PRESENTE DURANTE CARGA */}
             {fotoUrl && (
               <a href={fotoUrl} target="_blank" className="text-[10px] bg-blue-500/10 text-blue-400 px-4 py-2 rounded-full border border-blue-500/20 font-bold animate-pulse">
                 🔗 VER CAPTURA SUBIDA
@@ -231,7 +231,7 @@ export default function EntradaACP() {
 
             <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3">
               <span className="text-lg">💬</span>
-              <span className="text-[10px] font-black text-emerald-400">ENVIAR REPORTE POR WHATSAPP</span>
+              <span className="text-[10px] font-black text-emerald-400">NOTIFICAR A JEFE</span>
             </button>
             
             <div className="grid grid-cols-2 gap-3">
