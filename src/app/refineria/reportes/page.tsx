@@ -1,7 +1,7 @@
 ﻿'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import * as XLSX from 'xlsx'; // Asegúrate de instalarlo con: npm install xlsx
+import * as XLSX from 'xlsx';
 
 export default function ReporteFinalAuditoria() {
   const [loading, setLoading] = useState(true);
@@ -25,29 +25,46 @@ export default function ReporteFinalAuditoria() {
     const { data: todos, error } = await supabase
       .from('operaciones_refineria')
       .select('*')
-      .order('tipo_operacion', { ascending: true })
       .order('created_at', { ascending: true });
 
     if (!error && todos) {
       const procesados = todos.map((reg, index) => {
+        // --- LÓGICA PARA IDENTIFICAR EL TIPO REAL DE INVENTARIO ---
+        let tipoCalculado = reg.tipo_operacion;
+        
+        if (reg.tipo_operacion === 'INVENTARIO_PROCESO' && reg.metadata) {
+          try {
+            const meta = typeof reg.metadata === 'string' ? JSON.parse(reg.metadata) : reg.metadata;
+            if (meta.producto_inventariado === 'RBD') tipoCalculado = 'INVENTARIO_RBD_PROCESO';
+            if (meta.producto_inventariado === 'ACP') tipoCalculado = 'INVENTARIO_ACP_PROCESO';
+          } catch (e) {
+            console.error("Error al identificar producto en metadata", e);
+          }
+        }
+
         const anterior = todos.slice(0, index).reverse().find(r => r.tipo_operacion === reg.tipo_operacion);
         const lecturaActual = parseFloat(reg.valor_lectura) || 0;
-        
-        // Corrección: Si es el primer registro, la anterior es igual a la actual para empezar en 0
         const lecturaAnterior = anterior ? parseFloat(anterior.valor_lectura) : lecturaActual;
         
         const esContador = reg.tipo_operacion === 'ENTRADA_ACP' || reg.tipo_operacion === 'SALIDA_RBD';
         const kg = esContador ? (lecturaActual - lecturaAnterior) : lecturaActual;
 
-        return { ...reg, lecturaAnterior, kgResultantes: kg };
+        return { 
+          ...reg, 
+          tipo_operacion_display: tipoCalculado, // Usamos esta para filtrar y mostrar
+          lecturaAnterior, 
+          kgResultantes: kg 
+        };
       });
 
       const filtrados = procesados.filter(r => {
         const f = r.created_at.split('T')[0];
+        const cumpleProducto = filtroProducto === 'TODOS' || r.tipo_operacion_display === filtroProducto;
+        
         return f >= fechaInicio && f <= fechaFin &&
                (filtroProceso === 'TODOS' || r.es_reproceso === (filtroProceso === 'REPROCESO')) &&
                (filtroVariedad === 'TODOS' || r.variedad === filtroVariedad) &&
-               (filtroProducto === 'TODOS' || r.tipo_operacion === filtroProducto);
+               cumpleProducto;
       });
 
       setRegistros(filtrados);
@@ -60,11 +77,10 @@ export default function ReporteFinalAuditoria() {
   const exportarExcel = () => {
     if (registros.length === 0) return alert("No hay datos para exportar");
 
-    // Preparar los datos para el Excel
     const dataExcel = registros.map(r => ({
       'FECHA': new Date(r.created_at).toLocaleDateString(),
       'HORA': new Date(r.created_at).toLocaleTimeString(),
-      'OPERACIÓN': r.tipo_operacion,
+      'OPERACIÓN': r.tipo_operacion_display.replace(/_/g, ' '),
       'VARIEDAD': r.variedad,
       'PROCESO': r.es_reproceso ? 'REPROCESO' : 'NORMAL',
       'L. ANTERIOR': r.lecturaAnterior,
@@ -74,20 +90,16 @@ export default function ReporteFinalAuditoria() {
 
     const ws = XLSX.utils.json_to_sheet(dataExcel);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Auditoria_Produccion");
-    
-    // Generar archivo y descargar
-    XLSX.writeFile(wb, `Reporte_Refineria_${fechaInicio}_al_${fechaFin}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Auditoria");
+    XLSX.writeFile(wb, `Reporte_Produccion_${fechaInicio}_al_${fechaFin}.xlsx`);
   };
 
-  const exportarPDF = () => {
-    window.print();
-  };
+  const exportarPDF = () => { window.print(); };
 
   const enviarWhatsApp = () => {
     const totales: any = {};
     registros.forEach(r => {
-      const key = `${r.tipo_operacion} (${r.variedad})`;
+      const key = `${r.tipo_operacion_display} (${r.variedad})`;
       totales[key] = (totales[key] || 0) + r.kgResultantes;
     });
 
@@ -95,7 +107,7 @@ export default function ReporteFinalAuditoria() {
     msg += `*PERIODO:* ${fechaInicio} AL ${fechaFin}%0A%0A`;
     
     Object.entries(totales).forEach(([label, kg]: any) => {
-      msg += `• *${label}:* ${Number(kg).toLocaleString()} KG%0A`;
+      msg += `• *${label.replace(/_/g, ' ')}:* ${Number(kg).toLocaleString()} KG%0A`;
     });
 
     window.open(`https://wa.me/?text=${msg}`, '_blank');
@@ -118,12 +130,12 @@ export default function ReporteFinalAuditoria() {
     let grupoAnterior = "";
 
     registros.forEach((r, i) => {
-      const grupoActual = `${r.tipo_operacion} (${r.variedad})`;
+      const grupoActual = `${r.tipo_operacion_display} (${r.variedad})`;
 
       if (grupoAnterior !== "" && grupoAnterior !== grupoActual) {
         elementos.push(
           <tr key={`sub-${i}`} className="bg-orange-500/10 text-orange-500 font-black border-y border-orange-500/20">
-            <td colSpan={4} className="p-3 text-right">TOTAL {grupoAnterior}:</td>
+            <td colSpan={4} className="p-3 text-right">TOTAL {grupoAnterior.replace(/_/g, ' ')}:</td>
             <td className="p-3 text-right">{subtotal.toLocaleString()} KG</td>
             <td colSpan={2}></td>
           </tr>
@@ -137,9 +149,9 @@ export default function ReporteFinalAuditoria() {
       elementos.push(
         <tr key={r.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
           <td className="p-3 text-zinc-500">{new Date(r.created_at).toLocaleString([], {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'})}</td>
-          <td className="p-3 font-bold">{r.tipo_operacion}<br/><span className="text-[7px] text-zinc-600">{r.es_reproceso ? 'REPROCESO' : 'NORMAL'}</span></td>
+          <td className="p-3 font-bold">{r.tipo_operacion_display.replace(/_/g, ' ')}<br/><span className="text-[7px] text-zinc-600">{r.es_reproceso ? 'REPROCESO' : 'NORMAL'}</span></td>
           <td className="p-3 text-right tabular-nums text-zinc-500">
-            {r.tipo_operacion.includes('INVENTARIO') || r.tipo_operacion === 'ACIDO_GRASO' ? '-' : r.lecturaAnterior.toLocaleString()}
+            {r.tipo_operacion_display.includes('INVENTARIO') || r.tipo_operacion === 'ACIDO_GRASO' ? '-' : r.lecturaAnterior.toLocaleString()}
           </td>
           <td className="p-3 text-right tabular-nums text-white font-bold">{parseFloat(r.valor_lectura).toLocaleString()}</td>
           <td className="p-3 text-right tabular-nums font-black text-white">{r.kgResultantes.toLocaleString()}</td>
@@ -155,7 +167,7 @@ export default function ReporteFinalAuditoria() {
       if (i === registros.length - 1) {
         elementos.push(
           <tr key="sub-final" className="bg-orange-500/10 text-orange-500 font-black border-y border-orange-500/20">
-            <td colSpan={4} className="p-3 text-right">TOTAL {grupoAnterior}:</td>
+            <td colSpan={4} className="p-3 text-right">TOTAL {grupoAnterior.replace(/_/g, ' ')}:</td>
             <td className="p-3 text-right">{subtotal.toLocaleString()} KG</td>
             <td colSpan={2}></td>
           </tr>
