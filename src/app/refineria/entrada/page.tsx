@@ -88,7 +88,7 @@ export default function IngresoACP() {
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
       setFotoUrl(publicUrl);
 
-      setStatusText('Analizando variables...');
+      setStatusText('Analizando con IA...');
       const formData = new FormData();
       formData.append('apikey', OCR_API_KEY);
       formData.append('url', publicUrl);
@@ -103,8 +103,13 @@ export default function IngresoACP() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
 
-      // --- NUEVA LÓGICA DE EXTRACCIÓN MULTIVARIABLE ---
-      const lineas = textRaw.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+      // --- LÓGICA DE EXTRACCIÓN POR LÍNEAS (CORREGIDA) ---
+      // 1. Separamos por saltos de línea primero para que no se peguen los números
+      const lineas = textRaw.split('\n')
+        .map((l: string) => l.trim())
+        .filter((l: string) => l.length > 0);
+
+      // 2. Limpiamos cada línea dejando solo números y puntos
       const v = lineas.map((l: string) => l.replace(/[^0-9.]/g, ''));
 
       setDatos({
@@ -127,7 +132,6 @@ export default function IngresoACP() {
     if (!datos || !fotoUrl) return;
     setLoading(true);
     try {
-      // Inserción con todos los campos del SQL
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'INGRESO_ACP',
           valor_lectura: parseFloat(datos.totalizador), 
@@ -194,7 +198,7 @@ export default function IngresoACP() {
           </div>
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
-            {/* Visualización de variables múltiples */}
+            {/* Visualización de los 4 campos capturados */}
             <div className="grid grid-cols-2 gap-4 border-b border-white/5 pb-6">
                 <div className="text-center p-3 bg-black/20 rounded-2xl border border-white/5">
                     <p className="text-[8px] text-zinc-500 font-bold tracking-widest">MASA (KG/H)</p>
@@ -215,7 +219,7 @@ export default function IngresoACP() {
             </div>
 
             <div className="text-center">
-                <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
+                <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
             
             <textarea 
