@@ -17,7 +17,7 @@ export default function IngresoACP() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA
+  // PERSISTENCIA PARA NO PERDER DATOS
   useEffect(() => {
     const backup = localStorage.getItem('backup_ingreso_acp');
     if (backup) {
@@ -103,30 +103,19 @@ export default function IngresoACP() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
 
-      // --- LÓGICA REFINADA PARA CAPTURAR LA SEGUNDA FILA (TOTALIZADOR) ---
-      const lineas = textRaw.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
-      let valorFinal = "";
+      // --- LÓGICA DE SALTO DE FILA (SOLUCIÓN AL ERROR DE LECTURA) ---
+      // 1. Separamos por líneas y extraemos solo los bloques numéricos
+      const bloquesNumericos = textRaw.split('\n')
+        .map((l: string) => l.replace(/[^0-9]/g, '')) 
+        .filter((l: string) => l.length >= 7); // Filtramos para tener solo números tipo totalizador/flujo
 
-      // Iteramos las líneas ignorando la primera si detectamos que es el ID/Flujo
-      // Buscamos específicamente el patrón del totalizador de la segunda fila
-      for (let i = 0; i < lineas.length; i++) {
-        const soloNumeros = lineas[i].replace(/[^0-9]/g, '');
-        
-        // El totalizador Σ1 está en la segunda fila y tiene 7 dígitos
-        // Si la línea actual tiene 7 dígitos y no es la primera, es nuestro candidato ideal
-        if (soloNumeros.length === 7) {
-            valorFinal = soloNumeros;
-            // Si además encontramos el símbolo de sumatoria o "E1" cerca, estamos seguros
-            if (lineas[i].includes('E') || lineas[i].includes('S') || i > 0) {
-                break; 
-            }
-        }
-      }
+      let valorFinal = "0";
 
-      // Fallback: si no encontramos exactamente 7, buscamos la cadena numérica más plausible
-      if (!valorFinal) {
-        const todosLosNumeros = lineas.map(l => l.replace(/[^0-9]/g, '')).filter(n => n.length >= 7);
-        valorFinal = todosLosNumeros.length > 1 ? todosLosNumeros[1] : (todosLosNumeros[0] || "0");
+      // 2. Si detectamos 2 o más bloques, el totalizador (Σ1) es SIEMPRE el segundo bloque
+      if (bloquesNumericos.length >= 2) {
+        valorFinal = bloquesNumericos[1]; // Salta la fila 1 y toma la fila 2
+      } else if (bloquesNumericos.length === 1) {
+        valorFinal = bloquesNumericos[0];
       }
 
       setDatos({
@@ -172,6 +161,7 @@ export default function IngresoACP() {
           <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
         </header>
 
+        {/* SELECTORES BLOQUEADOS DURANTE PROCESO */}
         <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${(datos || loading) ? 'opacity-40 pointer-events-none' : ''}`}>
            <select 
               value={variedad} 
