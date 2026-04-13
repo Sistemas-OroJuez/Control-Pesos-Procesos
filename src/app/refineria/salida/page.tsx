@@ -103,13 +103,13 @@ export default function SalidaRBD() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
 
-      // --- MEJORA: BÚSQUEDA DEL TOTALIZADOR CORRECTO ---
-      // Filtramos líneas y nos quedamos con la que tenga más dígitos (el totalizador)
+      // --- MEJORA: BÚSQUEDA DEL TOTALIZADOR CORRECTO (SEGUNDA FILA / BLOQUE MÁS LARGO) ---
       const lineas = textRaw.split('\n');
       let valorFinal = "0";
       
       lineas.forEach((l: string) => {
         const soloNumeros = l.replace(/[^0-9]/g, '');
+        // El totalizador siempre tiene más dígitos que la masa o la temperatura
         if (soloNumeros.length > valorFinal.length) {
           valorFinal = soloNumeros;
         }
@@ -155,7 +155,6 @@ export default function SalidaRBD() {
           <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-zinc-900 border border-white/10 p-3 rounded-2xl">
             <span className="text-[10px] font-black text-zinc-400">VOLVER</span>
           </button>
-          {/* TÍTULO CAMBIADO A SALIDA RBD Y COLOR ESMERALDA */}
           <h1 className="flex-1 text-emerald-500 font-black text-[10px] tracking-[0.3em] text-center">SALIDA RBD OROJUEZ</h1>
         </header>
 
@@ -189,7 +188,6 @@ export default function SalidaRBD() {
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
-            {/* BOTÓN EN COLOR ESMERALDA */}
             <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-emerald-600 flex items-center justify-center shadow-2xl">
               <span className="text-4xl">📸</span>
             </button>
@@ -199,7 +197,6 @@ export default function SalidaRBD() {
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
-                {/* TEXTO RESULTADO EN ESMERALDA */}
                 <p className="text-6xl font-black text-emerald-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
                 <a href={fotoUrl!} target="_blank" className="text-[10px] text-emerald-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
