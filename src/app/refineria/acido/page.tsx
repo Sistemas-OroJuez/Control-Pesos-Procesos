@@ -10,7 +10,8 @@ export default function AcidoGraso() {
   const [statusText, setStatusText] = useState('');
   const [datos, setDatos] = useState<any>(null); 
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
-  const [vacioLectura, setVacioLectura] = useState<number>(0);
+  // Cambiamos a string para manejar el input vacío fácilmente y evitar el cálculo automático con 0
+  const [vacioLectura, setVacioLectura] = useState<string>('');
   const [tanque, setTanque] = useState<'T1' | 'T2'>('T1');
   const [variedad, setVariedad] = useState('ALTO OLEICO');
   const [esReproceso, setEsReproceso] = useState(false);
@@ -23,14 +24,19 @@ export default function AcidoGraso() {
     T2: { factor: 211, alturaMax: 610 }
   };
 
+  // LÓGICA DE CÁLCULO CORREGIDA
   const calcularKg = () => {
+    const valorNumerico = parseFloat(vacioLectura);
+    // Si no hay nada escrito o el valor es 0, devolvemos 0 para no confundir al operador
+    if (!vacioLectura || isNaN(valorNumerico) || valorNumerico === 0) return 0;
+
     const config = CONFIG_TANQUES[tanque];
-    const alturaReal = config.alturaMax - vacioLectura;
+    const alturaReal = config.alturaMax - valorNumerico;
     const kgResult = alturaReal * config.factor;
+    
     return kgResult > 0 ? kgResult : 0;
   };
 
-  // PERSISTENCIA LOCAL
   useEffect(() => {
     const backup = localStorage.getItem('backup_acido_graso');
     if (backup) {
@@ -38,7 +44,7 @@ export default function AcidoGraso() {
       if (p.fotoUrl) {
         setDatos({ status: 'capturado' });
         setFotoUrl(p.fotoUrl);
-        setVacioLectura(p.vacioLectura || 0);
+        setVacioLectura(p.vacioLectura || '');
         setTanque(p.tanque || 'T1');
         setVariedad(p.variedad || 'ALTO OLEICO');
         setEsReproceso(p.esReproceso || false);
@@ -60,7 +66,7 @@ export default function AcidoGraso() {
     setLoading(false);
     setDatos(null);
     setFotoUrl(null);
-    setVacioLectura(0);
+    setVacioLectura('');
     setObservaciones('');
     setStatusText('');
   };
@@ -68,20 +74,17 @@ export default function AcidoGraso() {
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setLoading(true);
     setStatusText('Subiendo Evidencia...');
-
     try {
       const fileName = `evidencia_acido_${Date.now()}.jpg`;
       const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, file);
       if (upErr) throw upErr;
-
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
       setFotoUrl(publicUrl);
       setDatos({ status: 'capturado' }); 
     } catch (err: any) {
-      alert("Error al subir imagen: " + err.message);
+      alert("Error: " + err.message);
     } finally {
       setLoading(false);
       setStatusText('');
@@ -89,18 +92,17 @@ export default function AcidoGraso() {
   };
 
   const handleConfirmarYGuardar = async () => {
-    if (!fotoUrl) {
-      alert("Por favor, capture la foto de evidencia primero.");
+    if (!vacioLectura || parseFloat(vacioLectura) <= 0) {
+      alert("Por favor, ingrese una medida de vacío válida.");
       return;
     }
-
     const kgFinales = calcularKg();
     setLoading(true);
     try {
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'ACIDO_GRASO',
           valor_lectura: kgFinales, 
-          detalle_vacio: vacioLectura,
+          detalle_vacio: parseFloat(vacioLectura),
           tanque_id: tanque,
           foto_url: fotoUrl,
           observaciones: observaciones,
@@ -109,7 +111,7 @@ export default function AcidoGraso() {
           es_reproceso: esReproceso
       }]);
       if (error) throw error;
-      alert("✅ REGISTRO GUARDADO EN BASE DE DATOS");
+      alert("✅ REGISTRO GUARDADO");
       resetTodo(); 
     } catch (err: any) { alert(err.message); }
     finally { setLoading(false); }
@@ -124,7 +126,7 @@ export default function AcidoGraso() {
                 `*Variedad:* ${variedad}%0A` +
                 `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
                 `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
-                `*Evidencia:* ${fotoUrl || 'No adjunta'}`;
+                `*Foto:* ${fotoUrl || 'No adjunta'}`;
     window.open(`https://wa.me/?text=${msg}`, '_blank');
   };
 
@@ -173,8 +175,9 @@ export default function AcidoGraso() {
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">LECTURA VACÍO (CM)</p>
                 <input 
                   type="number"
-                  value={vacioLectura || ''}
-                  onChange={(e) => setVacioLectura(Number(e.target.value))}
+                  inputMode="decimal"
+                  value={vacioLectura}
+                  onChange={(e) => setVacioLectura(e.target.value)}
                   className="w-full bg-transparent text-6xl font-black text-orange-500 tracking-tighter tabular-nums text-center focus:outline-none"
                   placeholder="0"
                 />
@@ -182,13 +185,12 @@ export default function AcidoGraso() {
                   <p className="text-[9px] text-zinc-500 font-bold tracking-widest">PESO NETO CALCULADO</p>
                   <p className="text-3xl font-black text-white">{calcularKg().toLocaleString()} KG</p>
                 </div>
-                <a href={fotoUrl!} target="_blank" className="text-[10px] text-orange-500 underline block mt-4 font-black tracking-widest">VER FOTO CAPTURADA</a>
             </div>
             
             <textarea 
               value={observaciones} 
               onChange={(e) => setObservaciones(e.target.value)} 
-              className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5 focus:border-orange-500/50 outline-none" 
+              className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5 outline-none" 
               placeholder="NOTAS DE LA OPERACIÓN..." 
             />
 
@@ -198,8 +200,8 @@ export default function AcidoGraso() {
             </button>
             
             <div className="grid grid-cols-2 gap-3">
-                <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400 hover:bg-zinc-700">REPROCESAR FOTO</button>
-                <button onClick={handleConfirmarYGuardar} className="py-5 bg-orange-600 rounded-2xl font-black text-[9px] hover:bg-orange-500 transition-colors">GUARDAR REGISTRO</button>
+                <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400">REPROCESAR FOTO</button>
+                <button onClick={handleConfirmarYGuardar} className="py-5 bg-orange-600 rounded-2xl font-black text-[9px]">GUARDAR REGISTRO</button>
             </div>
           </div>
         )}
