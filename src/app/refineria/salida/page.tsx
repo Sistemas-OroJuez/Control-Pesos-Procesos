@@ -17,7 +17,7 @@ export default function SalidaRBD() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA
+  // PERSISTENCIA PARA NO PERDER DATOS
   useEffect(() => {
     const backup = localStorage.getItem('backup_salida_rbd');
     if (backup) {
@@ -58,13 +58,13 @@ export default function SalidaRBD() {
         img.src = e.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1200; // Mayor resolución para evitar errores en dígitos pequeños
+          const MAX_WIDTH = 1000; 
           const scale = MAX_WIDTH / img.width;
           canvas.width = MAX_WIDTH;
           canvas.height = img.height * scale;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.85);
+          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.8);
         };
       };
     });
@@ -103,20 +103,20 @@ export default function SalidaRBD() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
 
-      // --- MEJORA: BÚSQUEDA DEL BLOQUE MÁS LARGO ---
-      // Filtramos todas las líneas y buscamos la que tenga la mayor cantidad de números seguidos
+      // --- MEJORA: BÚSQUEDA DEL TOTALIZADOR CORRECTO ---
+      // Filtramos líneas y nos quedamos con la que tenga más dígitos (el totalizador)
       const lineas = textRaw.split('\n');
-      let mejorCoincidencia = "0";
-
-      lineas.forEach((linea: string) => {
-        const limpio = linea.replace(/[^0-9]/g, '');
-        if (limpio.length > mejorCoincidencia.length) {
-          mejorCoincidencia = limpio;
+      let valorFinal = "0";
+      
+      lineas.forEach((l: string) => {
+        const soloNumeros = l.replace(/[^0-9]/g, '');
+        if (soloNumeros.length > valorFinal.length) {
+          valorFinal = soloNumeros;
         }
       });
 
       setDatos({
-        totalizador: mejorCoincidencia,
+        totalizador: valorFinal,
         status: 'completado'
       });
 
@@ -142,7 +142,7 @@ export default function SalidaRBD() {
           es_reproceso: esReproceso
       }]);
       if (error) throw error;
-      alert("✅ REGISTRO EXITOSO (SALIDA RBD)");
+      alert("✅ REGISTRO EXITOSO");
       resetTodo(); 
     } catch (err: any) { alert(err.message); }
     finally { setLoading(false); }
@@ -155,6 +155,7 @@ export default function SalidaRBD() {
           <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-zinc-900 border border-white/10 p-3 rounded-2xl">
             <span className="text-[10px] font-black text-zinc-400">VOLVER</span>
           </button>
+          {/* TÍTULO CAMBIADO A SALIDA RBD Y COLOR ESMERALDA */}
           <h1 className="flex-1 text-emerald-500 font-black text-[10px] tracking-[0.3em] text-center">SALIDA RBD OROJUEZ</h1>
         </header>
 
@@ -180,9 +181,15 @@ export default function SalidaRBD() {
           <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-emerald-900/30">
             <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-emerald-500 font-black text-[11px] tracking-widest uppercase mb-4">{statusText}</p>
+            {fotoUrl && (
+              <a href={fotoUrl} target="_blank" className="text-[10px] bg-emerald-500/10 text-emerald-400 px-4 py-2 rounded-full border border-emerald-500/20 font-bold animate-pulse">
+                🔗 VER CAPTURA SUBIDA
+              </a>
+            )}
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
+            {/* BOTÓN EN COLOR ESMERALDA */}
             <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-emerald-600 flex items-center justify-center shadow-2xl">
               <span className="text-4xl">📸</span>
             </button>
@@ -192,6 +199,7 @@ export default function SalidaRBD() {
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
+                {/* TEXTO RESULTADO EN ESMERALDA */}
                 <p className="text-6xl font-black text-emerald-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
                 <a href={fotoUrl!} target="_blank" className="text-[10px] text-emerald-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
