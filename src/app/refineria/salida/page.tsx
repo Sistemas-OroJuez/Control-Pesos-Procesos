@@ -3,32 +3,32 @@ import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const BUCKET_NAME = 'refineria_assets'; 
-const IA_ENDPOINT = "https://orojuezsa-lector-ocr-industrial.hf.space/upload";
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
+const OCR_API_KEY = 'K82540315988957'; 
 
 export default function SalidaRBD() {
   const [loading, setLoading] = useState(false);
-  const [ticketId, setTicketId] = useState<string | null>(null);
+  const [statusText, setStatusText] = useState('');
   const [datos, setDatos] = useState<any>(null);
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
   const [observaciones, setObservaciones] = useState('');
-  
   const [variedad, setVariedad] = useState('ALTO OLEICO');
   const [esReproceso, setEsReproceso] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. PERSISTENCIA
+  // PERSISTENCIA PARA NO PERDER DATOS (Clave única para Salida RBD)
   useEffect(() => {
     const backup = localStorage.getItem('backup_salida_rbd');
     if (backup) {
       const p = JSON.parse(backup);
-      setDatos(p.datos);
-      setFotoUrl(p.fotoUrl);
-      setVariedad(p.variedad || 'ALTO OLEICO');
-      setEsReproceso(p.esReproceso || false);
-      setObservaciones(p.observaciones || '');
-      return;
+      if (p.datos) {
+        setDatos(p.datos);
+        setFotoUrl(p.fotoUrl);
+        setVariedad(p.variedad || 'ALTO OLEICO');
+        setEsReproceso(p.esReproceso || false);
+        setObservaciones(p.observaciones || '');
+      }
     }
   }, []);
 
@@ -40,75 +40,92 @@ export default function SalidaRBD() {
     }
   }, [datos, fotoUrl, variedad, esReproceso, observaciones]);
 
-  // 2. ESCUCHA IA
-  useEffect(() => {
-    if (!ticketId) return;
-    const channel = supabase
-      .channel(`seguimiento-${ticketId}`)
-      .on('postgres_changes', { 
-          event: 'UPDATE', schema: 'public', table: 'lecturas_ia', filter: `id=eq.${ticketId}` 
-      }, (payload) => {
-          if (payload.new.status === 'completado') {
-            setDatos(payload.new);
-            setLoading(false);
-            setTicketId(null);
-          } else if (payload.new.status === 'error') {
-            alert("Error IA: " + payload.new.ia_raw);
-            setLoading(false);
-          }
-      }).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [ticketId]);
-
   const resetTodo = () => {
     localStorage.removeItem('backup_salida_rbd'); 
     setLoading(false);
-    setTicketId(null);
     setDatos(null);
     setFotoUrl(null);
     setObservaciones('');
-    setEsReproceso(false);
-    setVariedad('ALTO OLEICO');
+    setStatusText('');
+  };
+
+  const compressImage = (file: File): Promise<Blob> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (e) => {
+        const img = new Image();
+        img.src = e.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1000; 
+          const scale = MAX_WIDTH / img.width;
+          canvas.width = MAX_WIDTH;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.8);
+        };
+      };
+    });
   };
 
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     setLoading(true);
+    setStatusText('Optimizando Imagen...');
 
     try {
-      const hoy = new Date().toISOString().split('T')[0];
-      const { count } = await supabase.from('lecturas_ia').select('*', { count: 'exact', head: true }).gte('created_at', hoy);
-      const nuevoTicketNum = (count || 0) + 1;
-
-      const fileName = `salida_rbd_${nuevoTicketNum}_${Date.now()}.jpg`; 
-      const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, file);
+      const blob = await compressImage(file);
+      
+      setStatusText('Subiendo Archivo...');
+      const fileName = `salida_${Date.now()}.jpg`;
+      const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, blob);
       if (upErr) throw upErr;
 
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
       setFotoUrl(publicUrl);
 
-      const { data: ticket, error: dbErr } = await supabase
-        .from('lecturas_ia')
-        .insert({ 
-            status: 'procesando', 
-            foto_url: publicUrl, 
-            ticket_num: nuevoTicketNum, 
-            tipo_operacion: 'SALIDA_RBD'
-        })
-        .select().single();
-
-      if (dbErr) throw dbErr;
-      setTicketId(ticket.id);
-
+      setStatusText('Analizando con IA...');
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('ticket_id', ticket.id);
-      await fetch(IA_ENDPOINT, { method: "POST", body: formData });
+      formData.append('apikey', OCR_API_KEY);
+      formData.append('url', publicUrl);
+      formData.append('language', 'eng');
+      formData.append('OCREngine', '2'); 
+
+      const res = await fetch('https://api.ocr.space/parse/image', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await res.json();
+      const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
+
+      // --- LÓGICA DE SALTO DE FILA (SOLUCIÓN AL ERROR DE LECTURA) ---
+      const bloquesNumericos = textRaw.split('\n')
+        .map((l: string) => l.replace(/[^0-9]/g, '')) 
+        .filter((l: string) => l.length >= 7); 
+
+      let valorFinal = "0";
+
+      if (bloquesNumericos.length >= 2) {
+        valorFinal = bloquesNumericos[1]; 
+      } else if (bloquesNumericos.length === 1) {
+        valorFinal = bloquesNumericos[0];
+      }
+
+      setDatos({
+        totalizador: valorFinal,
+        status: 'completado'
+      });
 
     } catch (err: any) {
       alert("Error: " + err.message);
+    } finally {
       setLoading(false);
+      setStatusText('');
     }
   };
 
@@ -121,32 +138,15 @@ export default function SalidaRBD() {
           valor_lectura: parseFloat(datos.totalizador), 
           foto_url: fotoUrl,
           observaciones: observaciones,
-          temperatura_c: parseFloat(datos.temperatura || 0),
-          densidad_kg_l: 0.8936, 
           usuario_registro: 'Operador Salida',
           variedad: variedad,
           es_reproceso: esReproceso
       }]);
-
       if (error) throw error;
-      alert("✅ REGISTRO EXITOSO");
+      alert("✅ REGISTRO EXITOSO (SALIDA RBD)");
       resetTodo(); 
-    } catch (err: any) { 
-        alert("Error: " + err.message); 
-    } finally { setLoading(false); }
-  };
-
-  const handleEnviarAlJefe = () => {
-    if (!datos) return;
-    const mensaje = `🚨 *SOLICITUD DE REVISIÓN - SALIDA RBD* 🚨\n\n` +
-                    `*Ticket IA:* ${datos.ticket_num || 'N/A'}\n` +
-                    `*Variedad:* ${variedad}\n` +
-                    `*Tipo Proceso:* ${esReproceso ? 'REPROCESO ⚠️' : 'NORMAL'}\n` +
-                    `*Lectura OCR:* ${datos.totalizador} kg\n` +
-                    `*Temperatura:* ${datos.temperatura}°C\n` +
-                    `*Observaciones:* ${observaciones || 'Sin notas'}\n\n` +
-                    `*FOTO:* ${fotoUrl}`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
+    } catch (err: any) { alert(err.message); }
+    finally { setLoading(false); }
   };
 
   return (
@@ -156,60 +156,50 @@ export default function SalidaRBD() {
           <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-zinc-900 border border-white/10 p-3 rounded-2xl">
             <span className="text-[10px] font-black text-zinc-400">VOLVER</span>
           </button>
-          <h1 className="flex-1 text-emerald-500 font-black text-[10px] tracking-[0.3em] text-center">SALIDA DE RBD</h1>
+          <h1 className="flex-1 text-emerald-500 font-black text-[10px] tracking-[0.3em] text-center">SALIDA RBD OROJUEZ</h1>
         </header>
 
-        <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${datos ? 'opacity-40 pointer-events-none' : ''}`}>
-           <div>
-              <label className="text-[9px] font-black text-zinc-500 tracking-widest ml-2">VARIEDAD</label>
-              <select 
-                value={variedad} 
-                onChange={(e) => setVariedad(e.target.value)}
-                disabled={!!datos}
-                className="w-full bg-black border border-white/10 rounded-2xl p-4 mt-2 text-xs font-bold text-white appearance-none focus:outline-none"
-              >
-                <option value="ALTO OLEICO">ALTO OLEICO</option>
-                <option value="GUINENSIS">GUINENSIS</option>
-              </select>
-           </div>
+        <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${(datos || loading) ? 'opacity-40 pointer-events-none' : ''}`}>
+           <select 
+              value={variedad} 
+              onChange={(e) => setVariedad(e.target.value)}
+              className="w-full bg-black border border-white/10 rounded-2xl p-4 text-xs font-bold text-white focus:outline-none"
+            >
+              <option value="ALTO OLEICO">ALTO OLEICO</option>
+              <option value="GUINENSIS">GUINENSIS</option>
+            </select>
            <button 
             onClick={() => setEsReproceso(!esReproceso)}
-            disabled={!!datos}
-            className={`w-full p-4 rounded-2xl border transition-all flex justify-between items-center ${esReproceso ? 'border-emerald-500 bg-emerald-500/10' : 'border-white/10 bg-black'}`}
+            className={`w-full p-4 rounded-2xl border flex justify-between items-center ${esReproceso ? 'border-orange-500 bg-orange-500/10' : 'border-white/10 bg-black'}`}
            >
-             <span className="text-[10px] font-black tracking-widest uppercase">{esReproceso ? 'ES REPROCESO ✅' : 'PROCESO NORMAL'}</span>
-             <div className={`w-4 h-4 rounded-full ${esReproceso ? 'bg-emerald-500' : 'bg-zinc-800'}`}></div>
+             <span className="text-[10px] font-black tracking-widest">{esReproceso ? 'ES REPROCESO ✅' : 'PROCESO NORMAL'}</span>
+             <div className={`w-4 h-4 rounded-full ${esReproceso ? 'bg-orange-500' : 'bg-zinc-800'}`}></div>
            </button>
         </div>
 
-        {loading && !datos ? (
+        {loading ? (
           <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-emerald-900/30">
             <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-            <p className="text-emerald-500 font-black text-[11px] tracking-widest uppercase mb-4">IA Procesando...</p>
+            <p className="text-emerald-500 font-black text-[11px] tracking-widest uppercase mb-4">{statusText}</p>
             {fotoUrl && (
-              <a href={fotoUrl} target="_blank" className="text-emerald-400 text-[9px] font-black underline animate-pulse">
-                REVISAR FOTO CAPTURADA
+              <a href={fotoUrl} target="_blank" className="text-[10px] bg-emerald-500/10 text-emerald-400 px-4 py-2 rounded-full border border-emerald-500/20 font-bold animate-pulse">
+                🔗 VER CAPTURA SUBIDA
               </a>
             )}
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
-            <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-emerald-600 flex items-center justify-center shadow-2xl shadow-emerald-900/40">
+            <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-emerald-600 flex items-center justify-center shadow-2xl">
               <span className="text-4xl">📸</span>
             </button>
-            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">TOMAR FOTO TOTALIZADOR</p>
+            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">CAPTURAR SALIDA RBD</p>
           </div>
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
-                <div className="flex justify-center gap-2 mb-4">
-                  <span className="bg-emerald-500/10 text-emerald-500 text-[8px] border border-emerald-500/20 px-3 py-1 rounded-full font-black uppercase">{variedad}</span>
-                  {esReproceso && <span className="bg-orange-500/10 text-orange-500 text-[8px] border border-orange-500/20 px-3 py-1 rounded-full font-black uppercase">REPROCESO</span>}
-                </div>
-                <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">VALOR CAPTURADO</p>
+                <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
                 <p className="text-6xl font-black text-emerald-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
-                <p className="text-[10px] text-zinc-600 font-bold uppercase">{datos.temperatura}°C | {datos.densidad || '0.8936'} KG/L</p>
-                <a href={fotoUrl} target="_blank" className="text-[9px] text-emerald-500 underline block mt-2 font-bold tracking-widest">VER FOTO ORIGINAL</a>
+                <a href={fotoUrl!} target="_blank" className="text-[10px] text-emerald-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
             
             <textarea 
@@ -220,16 +210,9 @@ export default function SalidaRBD() {
             />
             
             <div className="grid grid-cols-2 gap-3">
-                <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400 uppercase">REINICIAR</button>
-                <button onClick={handleEnviarAlJefe} className="py-5 bg-orange-600/20 text-orange-500 rounded-2xl font-black text-[9px] uppercase">AVISAR AL JEFE</button>
+                <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400">REINTENTAR</button>
+                <button onClick={handleConfirmarYGuardar} className="py-5 bg-emerald-600 rounded-2xl font-black text-[9px]">CONFIRMAR</button>
             </div>
-            
-            <button 
-              onClick={handleConfirmarYGuardar} 
-              className="w-full py-6 bg-emerald-600 rounded-2xl font-black text-xs tracking-[0.2em] shadow-lg shadow-emerald-900/40 uppercase"
-            >
-              CONFIRMAR REGISTRO
-            </button>
           </div>
         )}
         <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleCapture} className="hidden" />
