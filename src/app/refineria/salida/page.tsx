@@ -17,7 +17,7 @@ export default function SalidaRBD() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA PARA NO PERDER DATOS
+  // PERSISTENCIA
   useEffect(() => {
     const backup = localStorage.getItem('backup_salida_rbd');
     if (backup) {
@@ -58,13 +58,13 @@ export default function SalidaRBD() {
         img.src = e.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1000; 
+          const MAX_WIDTH = 1200; 
           const scale = MAX_WIDTH / img.width;
           canvas.width = MAX_WIDTH;
           canvas.height = img.height * scale;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.8);
+          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.85);
         };
       };
     });
@@ -79,7 +79,6 @@ export default function SalidaRBD() {
 
     try {
       const blob = await compressImage(file);
-      
       setStatusText('Subiendo Archivo...');
       const fileName = `salida_${Date.now()}.jpg`;
       const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, blob);
@@ -102,18 +101,22 @@ export default function SalidaRBD() {
 
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
-
-      // --- MEJORA: BÚSQUEDA DEL TOTALIZADOR CORRECTO (SEGUNDA FILA / BLOQUE MÁS LARGO) ---
-      const lineas = textRaw.split('\n');
-      let valorFinal = "0";
       
-      lineas.forEach((l: string) => {
-        const soloNumeros = l.replace(/[^0-9]/g, '');
-        // El totalizador siempre tiene más dígitos que la masa o la temperatura
-        if (soloNumeros.length > valorFinal.length) {
-          valorFinal = soloNumeros;
-        }
-      });
+      // --- LÓGICA DE EXTRACCIÓN SIN LÍMITE DE DÍGITOS ---
+      // Obtenemos todas las líneas que tengan números
+      const lineasConNumeros = textRaw.split('\n')
+        .map((l: string) => l.replace(/[^0-9]/g, ''))
+        .filter((l: string) => l.length >= 4);
+
+      let valorFinal = "0";
+
+      // Si hay al menos dos líneas, la segunda (índice 1) es el totalizador (Σ1)
+      // No importa si tiene 7, 8 o 10 dígitos, capturará la cadena completa.
+      if (lineasConNumeros.length >= 2) {
+        valorFinal = lineasConNumeros[1]; 
+      } else if (lineasConNumeros.length === 1) {
+        valorFinal = lineasConNumeros[0];
+      }
 
       setDatos({
         totalizador: valorFinal,
