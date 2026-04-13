@@ -86,8 +86,6 @@ export default function IngresoACP() {
       if (upErr) throw upErr;
 
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
-      
-      // IMPORTANTE: Seteamos la URL aquí para que el link aparezca mientras el OCR trabaja
       setFotoUrl(publicUrl);
 
       setStatusText('Analizando con IA...');
@@ -103,11 +101,28 @@ export default function IngresoACP() {
       });
 
       const result = await res.json();
-      const text = result.ParsedResults?.[0]?.ParsedText || "";
-      const numeroLimpio = text.replace(/[^0-9.]/g, '');
+      const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
+
+      // --- CAMBIO AUMENTADO: FILTRADO POR LÍNEAS ---
+      const lineas = textRaw.split('\n');
+      let valorFinal = "";
+
+      for (let linea of lineas) {
+        const soloNumeros = linea.replace(/[^0-9]/g, '');
+        // Buscamos la línea del totalizador (típicamente 7-9 dígitos según tus fotos)
+        if (soloNumeros.length >= 7 && soloNumeros.length <= 9) {
+          valorFinal = soloNumeros;
+          break; 
+        }
+      }
+
+      if (!valorFinal) {
+        const limpiezaGeneral = textRaw.replace(/[^0-9]/g, '');
+        valorFinal = limpiezaGeneral.length > 7 ? limpiezaGeneral.substring(0, 7) : limpiezaGeneral;
+      }
 
       setDatos({
-        totalizador: numeroLimpio || "0.0",
+        totalizador: valorFinal || "0.0",
         status: 'completado'
       });
 
@@ -149,7 +164,6 @@ export default function IngresoACP() {
           <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
         </header>
 
-        {/* SELECTORES BLOQUEADOS DURANTE PROCESO */}
         <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${(datos || loading) ? 'opacity-40 pointer-events-none' : ''}`}>
            <select 
               value={variedad} 
@@ -172,7 +186,6 @@ export default function IngresoACP() {
           <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-blue-900/30">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-blue-500 font-black text-[11px] tracking-widest uppercase mb-4">{statusText}</p>
-            {/* LINK VISIBLE DURANTE EL PROCESO DE LA IA */}
             {fotoUrl && (
               <a href={fotoUrl} target="_blank" className="text-[10px] bg-blue-500/10 text-blue-400 px-4 py-2 rounded-full border border-blue-500/20 font-bold animate-pulse">
                 🔗 VER CAPTURA SUBIDA
@@ -191,7 +204,6 @@ export default function IngresoACP() {
             <div className="text-center py-4 border-b border-white/5">
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR</p>
                 <p className="text-6xl font-black text-blue-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
-                {/* LINK PRESENTE EN EL RESULTADO FINAL */}
                 <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
             
