@@ -6,7 +6,7 @@ const BUCKET_NAME = 'refineria_assets';
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
 const OCR_API_KEY = 'K82540315988957'; 
 
-export default function IngresoACP() {
+export default function EntradaACP() {
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
   const [datos, setDatos] = useState<any>(null);
@@ -17,9 +17,9 @@ export default function IngresoACP() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA PARA NO PERDER DATOS
+  // PERSISTENCIA ESPECÍFICA PARA ENTRADA ACP
   useEffect(() => {
-    const backup = localStorage.getItem('backup_ingreso_acp');
+    const backup = localStorage.getItem('backup_entrada_acp');
     if (backup) {
       const p = JSON.parse(backup);
       if (p.datos) {
@@ -34,14 +34,14 @@ export default function IngresoACP() {
 
   useEffect(() => {
     if (datos || fotoUrl) {
-      localStorage.setItem('backup_ingreso_acp', JSON.stringify({
+      localStorage.setItem('backup_entrada_acp', JSON.stringify({
         datos, fotoUrl, variedad, esReproceso, observaciones
       }));
     }
   }, [datos, fotoUrl, variedad, esReproceso, observaciones]);
 
   const resetTodo = () => {
-    localStorage.removeItem('backup_ingreso_acp'); 
+    localStorage.removeItem('backup_entrada_acp'); 
     setLoading(false);
     setDatos(null);
     setFotoUrl(null);
@@ -58,13 +58,13 @@ export default function IngresoACP() {
         img.src = e.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1000; 
+          const MAX_WIDTH = 1200; 
           const scale = MAX_WIDTH / img.width;
           canvas.width = MAX_WIDTH;
           canvas.height = img.height * scale;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.8);
+          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.85);
         };
       };
     });
@@ -79,9 +79,8 @@ export default function IngresoACP() {
 
     try {
       const blob = await compressImage(file);
-      
       setStatusText('Subiendo Archivo...');
-      const fileName = `ingreso_${Date.now()}.jpg`;
+      const fileName = `entrada_acp_${Date.now()}.jpg`;
       const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, blob);
       if (upErr) throw upErr;
 
@@ -102,22 +101,18 @@ export default function IngresoACP() {
 
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
-
-      // --- MEJORA: LÓGICA DINÁMICA (SIN LÍMITE DE DÍGITOS) ---
-      // 1. Extraemos bloques numéricos que tengan 4 o más dígitos
-      // Esto permite capturar desde miles hasta cientos de millones sin cambios manuales.
-      const bloquesNumericos = textRaw.split('\n')
-        .map((l: string) => l.replace(/[^0-9]/g, '')) 
-        .filter((l: string) => l.length >= 4); 
+      
+      const lineasConNumeros = textRaw.split('\n')
+        .map((l: string) => l.replace(/[^0-9]/g, ''))
+        .filter((l: string) => l.length >= 4);
 
       let valorFinal = "0";
 
-      // 2. Basado en el visor del medidor masivo:
-      // El totalizador (Σ1) suele ser el segundo bloque detectado de arriba hacia abajo.
-      if (bloquesNumericos.length >= 2) {
-        valorFinal = bloquesNumericos[1]; // Toma la fila 2 (Totalizador)
-      } else if (bloquesNumericos.length === 1) {
-        valorFinal = bloquesNumericos[0];
+      // Mismo problema: leemos la segunda línea (índice 1) para el totalizador (Σ1)
+      if (lineasConNumeros.length >= 2) {
+        valorFinal = lineasConNumeros[1]; 
+      } else if (lineasConNumeros.length === 1) {
+        valorFinal = lineasConNumeros[0];
       }
 
       setDatos({
@@ -138,7 +133,7 @@ export default function IngresoACP() {
     setLoading(true);
     try {
       const { error } = await supabase.from('operaciones_refineria').insert([{
-          tipo_operacion: 'INGRESO_ACP',
+          tipo_operacion: 'ENTRADA_ACP',
           valor_lectura: parseFloat(datos.totalizador), 
           foto_url: fotoUrl,
           observaciones: observaciones,
@@ -160,7 +155,8 @@ export default function IngresoACP() {
           <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-zinc-900 border border-white/10 p-3 rounded-2xl">
             <span className="text-[10px] font-black text-zinc-400">VOLVER</span>
           </button>
-          <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
+          {/* TÍTULO CAMBIADO A ENTRADA ACP Y COLOR AZUL */}
+          <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">ENTRADA ACP OROJUEZ</h1>
         </header>
 
         <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${(datos || loading) ? 'opacity-40 pointer-events-none' : ''}`}>
@@ -193,15 +189,17 @@ export default function IngresoACP() {
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
+            {/* BOTÓN EN COLOR AZUL */}
             <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl">
               <span className="text-4xl">📸</span>
             </button>
-            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">CAPTURAR INGRESO</p>
+            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">CAPTURAR ENTRADA ACP</p>
           </div>
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
+                {/* TEXTO RESULTADO EN AZUL */}
                 <p className="text-6xl font-black text-blue-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
                 <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
