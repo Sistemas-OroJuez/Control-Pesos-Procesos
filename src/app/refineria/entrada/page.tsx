@@ -103,26 +103,34 @@ export default function IngresoACP() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
 
-      // --- CAMBIO AUMENTADO: FILTRADO POR LÍNEAS ---
-      const lineas = textRaw.split('\n');
+      // --- LÓGICA REFINADA PARA CAPTURAR LA SEGUNDA FILA (TOTALIZADOR) ---
+      const lineas = textRaw.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
       let valorFinal = "";
 
-      for (let linea of lineas) {
-        const soloNumeros = linea.replace(/[^0-9]/g, '');
-        // Buscamos la línea del totalizador (típicamente 7-9 dígitos según tus fotos)
-        if (soloNumeros.length >= 7 && soloNumeros.length <= 9) {
-          valorFinal = soloNumeros;
-          break; 
+      // Iteramos las líneas ignorando la primera si detectamos que es el ID/Flujo
+      // Buscamos específicamente el patrón del totalizador de la segunda fila
+      for (let i = 0; i < lineas.length; i++) {
+        const soloNumeros = lineas[i].replace(/[^0-9]/g, '');
+        
+        // El totalizador Σ1 está en la segunda fila y tiene 7 dígitos
+        // Si la línea actual tiene 7 dígitos y no es la primera, es nuestro candidato ideal
+        if (soloNumeros.length === 7) {
+            valorFinal = soloNumeros;
+            // Si además encontramos el símbolo de sumatoria o "E1" cerca, estamos seguros
+            if (lineas[i].includes('E') || lineas[i].includes('S') || i > 0) {
+                break; 
+            }
         }
       }
 
+      // Fallback: si no encontramos exactamente 7, buscamos la cadena numérica más plausible
       if (!valorFinal) {
-        const limpiezaGeneral = textRaw.replace(/[^0-9]/g, '');
-        valorFinal = limpiezaGeneral.length > 7 ? limpiezaGeneral.substring(0, 7) : limpiezaGeneral;
+        const todosLosNumeros = lineas.map(l => l.replace(/[^0-9]/g, '')).filter(n => n.length >= 7);
+        valorFinal = todosLosNumeros.length > 1 ? todosLosNumeros[1] : (todosLosNumeros[0] || "0");
       }
 
       setDatos({
-        totalizador: valorFinal || "0.0",
+        totalizador: valorFinal,
         status: 'completado'
       });
 
@@ -202,7 +210,7 @@ export default function IngresoACP() {
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
-                <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR</p>
+                <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
                 <p className="text-6xl font-black text-blue-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
                 <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
