@@ -103,20 +103,21 @@ export default function IngresoACP() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
 
-      // --- LÓGICA DE EXTRACCIÓN POR LÍNEAS (CORREGIDA) ---
-      // 1. Separamos por saltos de línea primero para que no se peguen los números
-      const lineas = textRaw.split('\n')
+      // --- LÓGICA DE POSICIÓN DE LECTURA POR FILA ---
+      // 1. Separamos por saltos de línea y limpiamos espacios
+      const lineasDetectadas = textRaw.split('\n')
         .map((l: string) => l.trim())
         .filter((l: string) => l.length > 0);
 
-      // 2. Limpiamos cada línea dejando solo números y puntos
-      const v = lineas.map((l: string) => l.replace(/[^0-9.]/g, ''));
+      // 2. Extraemos solo números y puntos de cada línea para mantener la posición
+      const v = lineasDetectadas.map((l: string) => l.replace(/[^0-9.]/g, ''));
 
+      // Asignamos según el orden de filas de la pantalla industrial
       setDatos({
-        masa_kg_h: v[0] || "0",
-        totalizador: v[1] || "0",
-        temperatura_c: v[2] || "0",
-        densidad_kg_l: v[3] || "0",
+        masa_kg_h: v[0] || "0",      // POSICIÓN 1: MASA
+        totalizador: v[1] || "0",    // POSICIÓN 2: TOTALIZADOR (Σ1)
+        temperatura_c: v[2] || "0",  // POSICIÓN 3: TEMPERATURA
+        densidad_kg_l: v[3] || "0",  // POSICIÓN 4: DENSIDAD
         status: 'completado'
       });
 
@@ -198,7 +199,6 @@ export default function IngresoACP() {
           </div>
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
-            {/* Visualización de los 4 campos capturados */}
             <div className="grid grid-cols-2 gap-4 border-b border-white/5 pb-6">
                 <div className="text-center p-3 bg-black/20 rounded-2xl border border-white/5">
                     <p className="text-[8px] text-zinc-500 font-bold tracking-widest">MASA (KG/H)</p>
