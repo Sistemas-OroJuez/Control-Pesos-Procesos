@@ -2,147 +2,179 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
-export default function ReporteDiferencialRefineria() {
+export default function ReporteMaestroRefineria() {
   const [loading, setLoading] = useState(true);
   const [registros, setRegistros] = useState<any[]>([]);
   
+  // FILTROS AVANZADOS
   const [fechaInicio, setFechaInicio] = useState(new Date().toISOString().split('T')[0]);
   const [fechaFin, setFechaFin] = useState(new Date().toISOString().split('T')[0]);
+  const [filtroProceso, setFiltroProceso] = useState('TODOS');
+  const [filtroVariedad, setFiltroVariedad] = useState('TODOS');
   const [filtroProducto, setFiltroProducto] = useState('TODOS');
 
   const CLAVE_MAESTRA = "orj2026";
 
   useEffect(() => {
     fetchData();
-  }, [fechaInicio, fechaFin, filtroProducto]);
+  }, [fechaInicio, fechaFin, filtroProceso, filtroVariedad, filtroProducto]);
 
   const fetchData = async () => {
     setLoading(true);
-    // Traemos un set de datos más amplio para poder encontrar la "lectura anterior" 
-    // incluso si el primer registro del día depende del último del día anterior.
-    let query = supabase
+    const { data: todos, error } = await supabase
       .from('operaciones_refineria')
       .select('*')
+      .order('tipo_operacion', { ascending: true }) // Ordenar para facilitar subtotales
       .order('created_at', { ascending: true });
 
-    const { data: todosLosDatos, error } = await query;
-
-    if (!error && todosLosDatos) {
-      // Procesamos los datos para inyectar la "Lectura Anterior"
-      const procesados = todosLosDatos.map((reg, index) => {
-        // Buscamos el registro anterior del mismo tipo de operación
-        const anterior = todosLosDatos
-          .slice(0, index)
-          .reverse()
-          .find(r => r.tipo_operacion === reg.tipo_operacion);
-
-        const lecturaAnterior = anterior ? parseFloat(anterior.valor_lectura) : 0;
+    if (!error && todos) {
+      const procesados = todos.map((reg, index) => {
+        const anterior = todos.slice(0, index).reverse().find(r => r.tipo_operacion === reg.tipo_operacion);
         const lecturaActual = parseFloat(reg.valor_lectura);
+        const lecturaAnterior = anterior ? parseFloat(anterior.valor_lectura) : lecturaActual;
         
-        // El diferencial solo aplica para contadores (ACP y RBD)
-        // Para Ácido Graso, el valor ya es el neto (visto en pasos anteriores)
         const esContador = reg.tipo_operacion === 'ENTRADA_ACP' || reg.tipo_operacion === 'SALIDA_RBD';
-        const kgResultantes = esContador ? (lecturaActual - lecturaAnterior) : lecturaActual;
+        const kg = esContador ? (lecturaActual - lecturaAnterior) : lecturaActual;
 
-        return {
-          ...reg,
-          lecturaAnterior,
-          kgResultantes: kgResultantes > 0 ? kgResultantes : 0
-        };
+        return { ...reg, lecturaAnterior, kgResultantes: kg };
       });
 
-      // Filtramos por el rango de fechas seleccionado para la vista
+      // Filtrado según selección
       const filtrados = procesados.filter(r => {
-        const fechaReg = r.created_at.split('T')[0];
-        const matchFecha = fechaReg >= fechaInicio && fechaReg <= fechaFin;
-        const matchProd = filtroProducto === 'TODOS' || r.tipo_operacion === filtroProducto;
-        return matchFecha && matchProd;
+        const f = r.created_at.split('T')[0];
+        return f >= fechaInicio && f <= fechaFin &&
+               (filtroProceso === 'TODOS' || r.es_reproceso === (filtroProceso === 'REPROCESO')) &&
+               (filtroVariedad === 'TODOS' || r.variedad === filtroVariedad) &&
+               (filtroProducto === 'TODOS' || r.tipo_operacion === filtroProducto);
       });
 
-      setRegistros(filtrados.reverse()); // Mostrar más recientes arriba
+      setRegistros(filtrados);
     }
     setLoading(false);
   };
 
-  const handleEdit = async (id: string, valorActual: string) => {
-    const pass = prompt("CLAVE DE AUTORIZACIÓN:");
-    if (pass !== CLAVE_MAESTRA) return alert("ACCESO DENEGADO");
+  // --- LÓGICA DE WHATSAPP (SIN MERMA) ---
+  const enviarWhatsApp = () => {
+    const totales: any = {};
+    registros.forEach(r => {
+      const key = `${r.tipo_operacion} (${r.variedad})`;
+      totales[key] = (totales[key] || 0) + r.kgResultantes;
+    });
 
-    const nuevoValor = prompt("CORREGIR LECTURA ACTUAL (CONTADOR):", valorActual);
-    if (nuevoValor) {
-      await supabase.from('operaciones_refineria').update({ valor_lectura: nuevoValor }).eq('id', id);
-      fetchData();
-    }
+    let msg = `*📊 RESUMEN DE PRODUCCIÓN OROJUEZ*%0A`;
+    msg += `*Periodo:* ${fechaInicio} al ${fechaFin}%0A%0A`;
+    Object.entries(totales).forEach(([label, kg]: any) => {
+      msg += `• *${label}:* ${kg.toLocaleString()} KG%0A`;
+    });
+    window.open(`https://wa.me/?text=${msg}`, '_blank');
+  };
+
+  // --- RENDERIZADO CON SUBTOTALES ---
+  const renderFilasConSubtotales = () => {
+    const filas: any[] = [];
+    let subtotalGrupo = 0;
+    let ultimoGrupo = "";
+
+    registros.forEach((r, i) => {
+      const grupoActual = `${r.tipo_operacion} - ${r.variedad}`;
+      
+      // Si cambia el grupo y no es el primero, insertamos fila de subtotal
+      if (ultimoGrupo !== "" && ultimoGrupo !== grupoActual) {
+        filas.push(
+          <tr key={`sub-${i}`} className="bg-orange-500/10 font-black text-orange-500">
+            <td colSpan={4} className="p-2 text-right text-[8px]">SUBTOTAL {ultimoGrupo}:</td>
+            <td className="p-2 text-right border-t border-orange-500/30">{subtotalGrupo.toLocaleString()} KG</td>
+            <td colSpan={2}></td>
+          </tr>
+        );
+        subtotalGrupo = 0;
+      }
+
+      subtotalGrupo += r.kgResultantes;
+      ultimoGrupo = grupoActual;
+
+      filas.push(
+        <tr key={r.id} className="border-b border-white/5 text-zinc-400">
+          <td className="p-3">{new Date(r.created_at).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+          <td className="p-3 font-bold text-white">{r.tipo_operacion}</td>
+          <td className="p-3 text-right tabular-nums">{r.tipo_operacion === 'ACIDO_GRASO' ? '-' : r.lecturaAnterior.toLocaleString()}</td>
+          <td className="p-3 text-right tabular-nums text-white">{parseFloat(r.valor_lectura).toLocaleString()}</td>
+          <td className="p-3 text-right tabular-nums font-black text-white">{r.kgResultantes.toLocaleString()}</td>
+          <td className="p-3 text-center"><a href={r.foto_url} target="_blank">📸</a></td>
+          <td className="p-3 text-center">
+            <button onClick={() => {/* logic edit */}} className="opacity-20 hover:opacity-100">✏️</button>
+          </td>
+        </tr>
+      );
+
+      // Si es el último registro de la lista, poner el último subtotal
+      if (i === registros.length - 1) {
+        filas.push(
+          <tr key={`sub-final`} className="bg-orange-500/10 font-black text-orange-500">
+            <td colSpan={4} className="p-2 text-right text-[8px]">SUBTOTAL {ultimoGrupo}:</td>
+            <td className="p-2 text-right border-t border-orange-500/30">{subtotalGrupo.toLocaleString()} KG</td>
+            <td colSpan={2}></td>
+          </tr>
+        );
+      }
+    });
+    return filas;
   };
 
   return (
-    <div className="min-h-screen bg-black text-white p-4 font-sans uppercase text-[10px] tracking-tighter">
+    <div className="min-h-screen bg-black text-white p-4 font-sans uppercase text-[9px] tracking-tighter">
       
-      {/* FILTROS */}
-      <div className="bg-zinc-900 p-6 rounded-[30px] border border-white/10 mb-6 flex flex-wrap gap-4 items-end">
-        <div className="flex flex-col gap-1">
-          <label className="text-zinc-500 text-[8px]">Desde</label>
-          <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} className="bg-black border border-white/10 p-2 rounded-lg text-white" />
+      {/* PANEL DE FILTROS */}
+      <div className="bg-zinc-900 p-6 rounded-[30px] border border-white/10 mb-4 space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} className="bg-black border border-white/10 p-2 rounded-xl" />
+          <input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} className="bg-black border border-white/10 p-2 rounded-xl" />
+          <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} className="bg-black border border-white/10 p-2 rounded-xl">
+            <option value="TODOS">TODOS PRODUCTOS</option>
+            <option value="ENTRADA_ACP">ENTRADA ACP</option>
+            <option value="ACIDO_GRASO">ACIDO GRASO</option>
+            <option value="SALIDA_RBD">SALIDA RBD</option>
+          </select>
+          <select value={filtroVariedad} onChange={e => setFiltroVariedad(e.target.value)} className="bg-black border border-white/10 p-2 rounded-xl">
+            <option value="TODOS">TODAS VARIEDADES</option>
+            <option value="ALTO OLEICO">ALTO OLEICO</option>
+            <option value="GUINENSIS">GUINENSIS</option>
+          </select>
+          <select value={filtroProceso} onChange={e => setFiltroProceso(e.target.value)} className="bg-black border border-white/10 p-2 rounded-xl">
+            <option value="TODOS">TODOS PROCESOS</option>
+            <option value="NORMAL">NORMAL</option>
+            <option value="REPROCESO">REPROCESO</option>
+          </select>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-zinc-500 text-[8px]">Hasta</label>
-          <input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} className="bg-black border border-white/10 p-2 rounded-lg text-white" />
+
+        {/* BOTONES EXPORTACIÓN */}
+        <div className="flex flex-wrap gap-2 pt-2">
+          <button className="flex-1 py-3 bg-zinc-800 rounded-xl font-black border border-white/5 hover:bg-zinc-700">📄 PDF</button>
+          <button className="flex-1 py-3 bg-zinc-800 rounded-xl font-black border border-white/5 hover:bg-zinc-700">📊 EXCEL</button>
+          <button onClick={enviarWhatsApp} className="flex-[2] py-3 bg-emerald-600 rounded-xl font-black shadow-lg shadow-emerald-900/20">💬 ENVIAR RESUMEN WHATSAPP</button>
         </div>
-        <select value={filtroProducto} onChange={e => setFiltroProducto(e.target.value)} className="bg-black border border-white/10 p-2 rounded-lg h-[35px]">
-          <option value="TODOS">TODOS LOS PRODUCTOS</option>
-          <option value="ENTRADA_ACP">ENTRADA ACP</option>
-          <option value="SALIDA_RBD">SALIDA RBD</option>
-          <option value="ACIDO_GRASO">ÁCIDO GRASO</option>
-        </select>
       </div>
 
-      {/* TABLA DE DIFERENCIALES */}
-      <div className="bg-zinc-900 rounded-[30px] border border-white/5 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-white/5 text-zinc-500 border-b border-white/10">
-                <th className="p-4">FECHA / HORA</th>
-                <th className="p-4">PRODUCTO</th>
-                <th className="p-4 text-right">L. ANTERIOR</th>
-                <th className="p-4 text-right">L. ACTUAL</th>
-                <th className="p-4 text-right bg-orange-500/10 text-orange-500">KG NETOS</th>
-                <th className="p-4 text-center">FOTO</th>
-                <th className="p-4 text-center">EDIT</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={7} className="p-10 text-center">PROCESANDO BALANCE...</td></tr>
-              ) : registros.map((r) => (
-                <tr key={r.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                  <td className="p-4 text-zinc-400">
-                    {new Date(r.created_at).toLocaleDateString()} {new Date(r.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
-                  </td>
-                  <td className="p-4 font-black">
-                    {r.tipo_operacion}
-                    <div className="text-[7px] text-zinc-500">{r.variedad}</div>
-                  </td>
-                  <td className="p-4 text-right tabular-nums text-zinc-500">
-                    {r.tipo_operacion === 'ACIDO_GRASO' ? '-' : r.lecturaAnterior.toLocaleString()}
-                  </td>
-                  <td className="p-4 text-right tabular-nums font-bold">
-                    {parseFloat(r.valor_lectura).toLocaleString()}
-                  </td>
-                  <td className="p-4 text-right tabular-nums font-black text-orange-500 bg-orange-500/5">
-                    {r.kgResultantes.toLocaleString()} KG
-                  </td>
-                  <td className="p-4 text-center">
-                    <a href={r.foto_url} target="_blank" className="text-lg">📸</a>
-                  </td>
-                  <td className="p-4 text-center">
-                    <button onClick={() => handleEdit(r.id, r.valor_lectura)} className="opacity-30 hover:opacity-100">✏️</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {/* TABLA DE AUDITORÍA */}
+      <div className="bg-zinc-900 rounded-[30px] border border-white/5 overflow-hidden shadow-2xl">
+        <table className="w-full text-left">
+          <thead className="bg-white/5 text-zinc-500 font-black border-b border-white/10">
+            <tr>
+              <th className="p-4">FECHA / HORA</th>
+              <th className="p-4">PRODUCTO</th>
+              <th className="p-4 text-right">L. ANTERIOR</th>
+              <th className="p-4 text-right">L. ACTUAL</th>
+              <th className="p-4 text-right">KG NETOS</th>
+              <th className="p-4 text-center">FOTO</th>
+              <th className="p-4 text-center">EDIT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={7} className="p-20 text-center animate-pulse text-orange-500 font-black">GENERANDO REPORTE...</td></tr>
+            ) : renderFilasConSubtotales()}
+          </tbody>
+        </table>
       </div>
     </div>
   );
