@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 const BUCKET_NAME = 'refineria_assets'; 
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
 const OCR_API_KEY = 'K82540315988957'; 
+const JEFE_WHATSAPP = "593987654321"; // Reemplaza con el número real del jefe
 
 export default function EntradaACP() {
   const [loading, setLoading] = useState(false);
@@ -17,7 +18,7 @@ export default function EntradaACP() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA ESPECÍFICA PARA ENTRADA ACP
+  // PERSISTENCIA
   useEffect(() => {
     const backup = localStorage.getItem('backup_entrada_acp');
     if (backup) {
@@ -102,11 +103,9 @@ export default function EntradaACP() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
       
-      // --- LÓGICA REFORZADA PARA FOTOS CON BRILLO ---
       const lineas = textRaw.split('\n');
       let valorDetectado = "0";
 
-      // Buscamos líneas que contengan símbolos de totalizador (Σ, E, S, 1, etc.)
       const lineaTotalizador = lineas.find((l: string) => 
         l.includes('Σ') || l.includes('E1') || l.includes('S1') || l.includes('M1')
       );
@@ -114,7 +113,6 @@ export default function EntradaACP() {
       if (lineaTotalizador) {
         valorDetectado = lineaTotalizador.replace(/[^0-9]/g, '');
       } else {
-        // Fallback: Tomar la segunda línea de números (es la posición del Σ1 en tus fotos)
         const lineasNumericas = lineas
           .map((l: string) => l.replace(/[^0-9]/g, ''))
           .filter((l: string) => l.length >= 5);
@@ -155,6 +153,16 @@ export default function EntradaACP() {
     finally { setLoading(false); }
   };
 
+  const handleWhatsApp = () => {
+    if (!datos || !fotoUrl) return;
+    const msg = `*REPORTE ENTRADA ACP*%0A` +
+                `*Lectura:* ${datos.totalizador}%0A` +
+                `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
+                `*Variedad:* ${variedad}%0A` +
+                `*Foto:* ${fotoUrl}`;
+    window.open(`https://wa.me/${JEFE_WHATSAPP}?text=${msg}`, '_blank');
+  };
+
   return (
     <div className="min-h-screen bg-black text-white p-4 font-sans uppercase">
       <div className="max-w-md mx-auto space-y-6">
@@ -187,6 +195,12 @@ export default function EntradaACP() {
           <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-blue-900/30">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-blue-500 font-black text-[11px] tracking-widest uppercase mb-4">{statusText}</p>
+            {/* LINK SIEMPRE PRESENTE DURANTE CARGA */}
+            {fotoUrl && (
+              <a href={fotoUrl} target="_blank" className="text-[10px] bg-blue-500/10 text-blue-400 px-4 py-2 rounded-full border border-blue-500/20 font-bold animate-pulse">
+                🔗 VER CAPTURA SUBIDA
+              </a>
+            )}
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
@@ -199,7 +213,6 @@ export default function EntradaACP() {
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
-                {/* AHORA ES UN INPUT EDITABLE PARA CORREGIR ERRORES DEL OCR POR BRILLO */}
                 <input 
                   type="text"
                   value={datos.totalizador}
@@ -215,6 +228,11 @@ export default function EntradaACP() {
               className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" 
               placeholder="NOTAS ADICIONALES..." 
             />
+
+            <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3">
+              <span className="text-lg">💬</span>
+              <span className="text-[10px] font-black text-emerald-400">NOTIFICAR A JEFE</span>
+            </button>
             
             <div className="grid grid-cols-2 gap-3">
                 <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400">REINTENTAR</button>
