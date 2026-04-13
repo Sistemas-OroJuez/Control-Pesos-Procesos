@@ -80,7 +80,7 @@ export default function SalidaRBD() {
     try {
       const blob = await compressImage(file);
       setStatusText('Subiendo Archivo...');
-      const fileName = `salida_${Date.now()}.jpg`;
+      const fileName = `salida_rbd_${Date.now()}.jpg`;
       const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, blob);
       if (upErr) throw upErr;
 
@@ -102,24 +102,25 @@ export default function SalidaRBD() {
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
       
-      // --- LÓGICA DE EXTRACCIÓN SIN LÍMITE DE DÍGITOS ---
-      // Obtenemos todas las líneas que tengan números
-      const lineasConNumeros = textRaw.split('\n')
-        .map((l: string) => l.replace(/[^0-9]/g, ''))
-        .filter((l: string) => l.length >= 4);
+      const lineas = textRaw.split('\n');
+      let valorDetectado = "0";
 
-      let valorFinal = "0";
+      const lineaTotalizador = lineas.find((l: string) => 
+        l.includes('Σ') || l.includes('E1') || l.includes('S1') || l.includes('M1')
+      );
 
-      // Si hay al menos dos líneas, la segunda (índice 1) es el totalizador (Σ1)
-      // No importa si tiene 7, 8 o 10 dígitos, capturará la cadena completa.
-      if (lineasConNumeros.length >= 2) {
-        valorFinal = lineasConNumeros[1]; 
-      } else if (lineasConNumeros.length === 1) {
-        valorFinal = lineasConNumeros[0];
+      if (lineaTotalizador) {
+        valorDetectado = lineaTotalizador.replace(/[^0-9]/g, '');
+      } else {
+        const lineasNumericas = lineas
+          .map((l: string) => l.replace(/[^0-9]/g, ''))
+          .filter((l: string) => l.length >= 5);
+        
+        valorDetectado = lineasNumericas.length >= 2 ? lineasNumericas[1] : (lineasNumericas[0] || "0");
       }
 
       setDatos({
-        totalizador: valorFinal,
+        totalizador: valorDetectado,
         status: 'completado'
       });
 
@@ -149,6 +150,17 @@ export default function SalidaRBD() {
       resetTodo(); 
     } catch (err: any) { alert(err.message); }
     finally { setLoading(false); }
+  };
+
+  const handleWhatsApp = () => {
+    if (!datos || !fotoUrl) return;
+    const msg = `*REPORTE SALIDA RBD*%0A` +
+                `*Lectura:* ${datos.totalizador}%0A` +
+                `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
+                `*Variedad:* ${variedad}%0A` +
+                `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
+                `*Foto:* ${fotoUrl}`;
+    window.open(`https://wa.me/?text=${msg}`, '_blank');
   };
 
   return (
@@ -200,7 +212,12 @@ export default function SalidaRBD() {
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
-                <p className="text-6xl font-black text-emerald-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
+                <input 
+                  type="text"
+                  value={datos.totalizador}
+                  onChange={(e) => setDatos({...datos, totalizador: e.target.value.replace(/[^0-9]/g, '')})}
+                  className="w-full bg-transparent text-6xl font-black text-emerald-400 tracking-tighter tabular-nums text-center focus:outline-none"
+                />
                 <a href={fotoUrl!} target="_blank" className="text-[10px] text-emerald-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
             
@@ -210,6 +227,11 @@ export default function SalidaRBD() {
               className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" 
               placeholder="NOTAS ADICIONALES..." 
             />
+
+            <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3">
+              <span className="text-lg">💬</span>
+              <span className="text-[10px] font-black text-emerald-400">ENVIAR REPORTE POR WHATSAPP</span>
+            </button>
             
             <div className="grid grid-cols-2 gap-3">
                 <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400">REINTENTAR</button>
