@@ -185,7 +185,7 @@ export default function ReporteFinalAuditoria() {
               <thead>
                 <tr className="bg-blue-900/20 text-blue-400 border-b border-blue-500/10 font-black text-[8px]">
                   <th className="p-3">FECHA</th>
-                  <th className="p-3 text-right">TOTAL CPO (KG)</th>
+                  <th className="p-3 text-right">TOTAL ACP (KG)</th>
                   <th className="p-3 text-right">TOTAL RBD (KG)</th>
                   <th className="p-3 text-right text-white">BALANCE CPO</th>
                   <th className="p-3 text-right text-red-500">% MERMA</th>
