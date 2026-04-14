@@ -5,11 +5,10 @@ import * as XLSX from 'xlsx';
 
 export default function ReporteFinalAuditoria() {
   const [loading, setLoading] = useState(true);
-  const [registros, setRegistros] = useState<any[]>([]); // Para Auditoría
-  const [balanceData, setBalanceData] = useState<any[]>([]); // Para el Excel
+  const [registros, setRegistros] = useState<any[]>([]); 
+  const [balanceData, setBalanceData] = useState<any[]>([]); 
   const [modoVista, setModoVista] = useState<'AUDITORIA' | 'GERENCIAL'>('AUDITORIA');
   
-  // FILTROS (Default: primer día del mes)
   const [fechaInicio, setFechaInicio] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
   const [fechaFin, setFechaFin] = useState(new Date().toISOString().split('T')[0]);
 
@@ -23,7 +22,8 @@ export default function ReporteFinalAuditoria() {
 
   const fetchAuditoria = async () => {
     setLoading(true);
-    // Añadimos un timestamp a la consulta para forzar datos frescos de la DB
+    
+    // Forzamos datos frescos evitando cualquier caché intermedia
     const { data: todos, error } = await supabase
       .from('operaciones_refineria')
       .select('*')
@@ -37,6 +37,7 @@ export default function ReporteFinalAuditoria() {
         const kg = (reg.tipo_operacion === 'ENTRADA_ACP' || reg.tipo_operacion === 'SALIDA_RBD') ? (lecturaActual - lecturaAnterior) : lecturaActual;
         return { ...reg, lecturaAnterior, kgResultantes: kg };
       });
+      
       setRegistros(procesados.filter(r => {
         const f = r.created_at.split('T')[0];
         return f >= fechaInicio && f <= fechaFin;
@@ -60,7 +61,6 @@ export default function ReporteFinalAuditoria() {
     setLoading(false);
   };
 
-  // --- FUNCIÓN PARA EDITAR CORRECCIÓN OCR (CORREGIDA) ---
   const editarRegistro = async (id: string, valorActual: any) => {
     const clave = prompt("🔐 INGRESE CLAVE DE AUTORIZACIÓN:");
     if (clave !== CLAVE_MAESTRA) return alert("❌ CLAVE INCORRECTA");
@@ -69,31 +69,30 @@ export default function ReporteFinalAuditoria() {
     
     if (nuevoValorStr !== null && nuevoValorStr !== "") {
       const valorNumerico = parseFloat(nuevoValorStr);
-      
-      if (isNaN(valorNumerico)) {
-        return alert("⚠️ INGRESE UN NÚMERO VÁLIDO");
-      }
+      if (isNaN(valorNumerico)) return alert("⚠️ INGRESE UN NÚMERO VÁLIDO");
 
-      // 1. Actualización visual instantánea
+      setLoading(true);
+
+      // 1. Actualización visual instantánea (Optimistic UI)
       setRegistros(prev => prev.map(r => r.id === id ? { ...r, valor_lectura: valorNumerico } : r));
 
-      // 2. Guardar en Supabase
-      const { error } = await supabase
+      // 2. Intento de persistencia en la Nube
+      const { data, error } = await supabase
         .from('operaciones_refineria')
         .update({ valor_lectura: valorNumerico })
-        .eq('id', id);
+        .eq('id', id)
+        .select(); // El .select() obliga a Supabase a devolver el cambio realizado
 
       if (error) {
-        alert("❌ ERROR AL GUARDAR EN BASE DE DATOS");
+        alert("❌ ERROR EN DB: " + error.message);
         fetchAuditoria(); 
+      } else if (!data || data.length === 0) {
+        alert("⚠️ EL CAMBIO NO SE REFLEJÓ EN LA BASE DE DATOS. Verifica los permisos de la tabla.");
+        fetchAuditoria();
       } else {
-        alert("✅ VALOR ACTUALIZADO CORRECTAMENTE");
-        
-        // 3. Pequeña pausa de seguridad y recarga forzada
-        // Esto evita que la tabla "regrese" al valor viejo por culpa de la caché del navegador
-        setTimeout(() => {
-          fetchAuditoria();
-        }, 600);
+        alert("✅ VALOR GUARDADO: " + data[0].valor_lectura);
+        // Pequeña espera para sincronización de servidores y recarga limpia
+        setTimeout(() => fetchAuditoria(), 800);
       }
     }
   };
@@ -112,36 +111,26 @@ export default function ReporteFinalAuditoria() {
     const tRBD = balanceData.reduce((a, b) => a + (b.total_rbd || 0), 0);
     const tAGL = balanceData.reduce((a, b) => a + (b.agl_produccion || 0), 0);
     const merma = tCPO > 0 ? ((tCPO - (tRBD + tAGL)) / tCPO * 100) : 0;
-
     const msg = `*📊 RESUMEN GERENCIAL*%0A*ENTRADA CPO:* ${tCPO.toLocaleString()} KG%0A*SALIDA RBD:* ${tRBD.toLocaleString()} KG%0A*PROD AGL:* ${tAGL.toLocaleString()} KG%0A*MERMA:* ${merma.toFixed(2)}%25`;
     window.open(`https://wa.me/?text=${msg}`, '_blank');
   };
 
   return (
     <div className="min-h-screen bg-black text-white p-4 font-sans uppercase text-[10px]">
-      
       <div className="bg-zinc-900 p-6 rounded-[30px] border border-white/10 mb-6 space-y-6">
         <div className="flex flex-wrap justify-between items-center gap-4 border-b border-white/5 pb-4">
           <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-black border border-white/10 px-4 py-2 rounded-xl text-zinc-500 font-black">VOLVER</button>
-          
           <div className="flex bg-black p-1 rounded-xl border border-white/10">
-            <button 
-              onClick={() => setModoVista('AUDITORIA')}
-              className={`px-4 py-2 rounded-lg transition-all ${modoVista === 'AUDITORIA' ? 'bg-orange-600 text-white shadow-lg' : 'text-zinc-600'}`}
-            >VISTA AUDITORÍA</button>
-            <button 
-              onClick={() => setModoVista('GERENCIAL')}
-              className={`px-4 py-2 rounded-lg transition-all ${modoVista === 'GERENCIAL' ? 'bg-blue-600 text-white shadow-lg' : 'text-zinc-600'}`}
-            >BALANCE GERENCIAL</button>
+            <button onClick={() => setModoVista('AUDITORIA')} className={`px-4 py-2 rounded-lg transition-all ${modoVista === 'AUDITORIA' ? 'bg-orange-600 text-white shadow-lg' : 'text-zinc-600'}`}>VISTA AUDITORÍA</button>
+            <button onClick={() => setModoVista('GERENCIAL')} className={`px-4 py-2 rounded-lg transition-all ${modoVista === 'GERENCIAL' ? 'bg-blue-600 text-white shadow-lg' : 'text-zinc-600'}`}>BALANCE GERENCIAL</button>
           </div>
         </div>
-        
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white" />
           <input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white" />
-          <button onClick={exportarExcel} className="bg-zinc-800 py-3 rounded-xl font-black">📊 EXCEL</button>
-          <button onClick={() => window.print()} className="bg-zinc-800 py-3 rounded-xl font-black">📄 PDF</button>
-          <button onClick={enviarWhatsApp} className="bg-emerald-600 py-3 rounded-xl font-black">💬 WHATSAPP</button>
+          <button onClick={exportarExcel} className="bg-zinc-800 py-3 rounded-xl font-black hover:bg-zinc-700 transition-all">📊 EXCEL</button>
+          <button onClick={() => window.print()} className="bg-zinc-800 py-3 rounded-xl font-black hover:bg-zinc-700 transition-all">📄 PDF</button>
+          <button onClick={enviarWhatsApp} className="bg-emerald-600 py-3 rounded-xl font-black shadow-lg hover:bg-emerald-500 transition-all">💬 WHATSAPP</button>
         </div>
       </div>
 
@@ -172,12 +161,7 @@ export default function ReporteFinalAuditoria() {
                     <td className="p-4 text-right font-black text-orange-400">{r.kgResultantes?.toLocaleString()}</td>
                     <td className="p-4 text-center">{r.foto_url && <a href={r.foto_url} target="_blank" className="bg-zinc-800 p-2 rounded-lg inline-block">📸</a>}</td>
                     <td className="p-4 text-center">
-                      <button 
-                        onClick={() => editarRegistro(r.id, r.valor_lectura)}
-                        className="bg-blue-500/10 p-2 rounded-lg text-blue-500 hover:bg-blue-500 hover:text-white transition-all shadow-md"
-                      >
-                        ✏️
-                      </button>
+                      <button onClick={() => editarRegistro(r.id, r.valor_lectura)} className="bg-blue-500/10 p-2 rounded-lg text-blue-500 hover:bg-blue-500 hover:text-white transition-all shadow-md">✏️</button>
                     </td>
                   </tr>
                 ))}
@@ -186,7 +170,7 @@ export default function ReporteFinalAuditoria() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
+             <table className="w-full text-left">
               <thead>
                 <tr className="bg-blue-900/20 text-blue-400 border-b border-blue-500/10 font-black text-[8px]">
                   <th className="p-3">FECHA</th>
