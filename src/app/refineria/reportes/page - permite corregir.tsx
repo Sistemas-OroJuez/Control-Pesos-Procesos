@@ -22,6 +22,8 @@ export default function ReporteFinalAuditoria() {
 
   const fetchAuditoria = async () => {
     setLoading(true);
+    
+    // Forzamos datos frescos evitando cualquier caché intermedia
     const { data: todos, error } = await supabase
       .from('operaciones_refineria')
       .select('*')
@@ -59,21 +61,38 @@ export default function ReporteFinalAuditoria() {
     setLoading(false);
   };
 
+  // --- FUNCIÓN DE EDICIÓN CON PERSISTENCIA VERIFICADA ---
   const editarRegistro = async (id: string, valorActual: any) => {
     const clave = prompt("🔐 INGRESE CLAVE DE AUTORIZACIÓN:");
     if (clave !== CLAVE_MAESTRA) return alert("❌ CLAVE INCORRECTA");
+
     const nuevoValorStr = prompt("📝 CORREGIR VALOR DE LECTURA (OCR):", valorActual);
+    
     if (nuevoValorStr !== null && nuevoValorStr !== "") {
       const valorNumerico = parseFloat(nuevoValorStr);
       if (isNaN(valorNumerico)) return alert("⚠️ INGRESE UN NÚMERO VÁLIDO");
+
       setLoading(true);
+
+      // 1. Cambio visual inmediato (Optimistic UI)
       setRegistros(prev => prev.map(r => r.id === id ? { ...r, valor_lectura: valorNumerico } : r));
-      const { data, error } = await supabase.from('operaciones_refineria').update({ valor_lectura: valorNumerico }).eq('id', id).select();
+
+      // 2. Persistencia en Supabase
+      const { data, error } = await supabase
+        .from('operaciones_refineria')
+        .update({ valor_lectura: valorNumerico })
+        .eq('id', id)
+        .select(); // Verifica que la fila cambió realmente
+
       if (error) {
         alert("❌ ERROR EN DB: " + error.message);
         fetchAuditoria(); 
+      } else if (!data || data.length === 0) {
+        alert("⚠️ EL CAMBIO NO SE REFLEJÓ. REVISA LOS PERMISOS RLS EN SUPABASE.");
+        fetchAuditoria();
       } else {
-        alert("✅ VALOR GUARDADO");
+        alert("✅ VALOR GUARDADO EN LA NUBE: " + data[0].valor_lectura);
+        // Espera un momento para que los cálculos de KG se sincronicen
         setTimeout(() => fetchAuditoria(), 800);
       }
     }
@@ -92,7 +111,8 @@ export default function ReporteFinalAuditoria() {
     const tCPO = balanceData.reduce((a, b) => a + (b.total_cpo || 0), 0);
     const tRBD = balanceData.reduce((a, b) => a + (b.total_rbd || 0), 0);
     const tAGL = balanceData.reduce((a, b) => a + (b.agl_produccion || 0), 0);
-    const msg = `*📊 RESUMEN GERENCIAL*%0A*ENTRADA CPO:* ${tCPO.toLocaleString()} KG%0A*SALIDA RBD:* ${tRBD.toLocaleString()} KG%0A*PROD AGL:* ${tAGL.toLocaleString()} KG`;
+    const merma = tCPO > 0 ? ((tCPO - (tRBD + tAGL)) / tCPO * 100) : 0;
+    const msg = `*📊 RESUMEN GERENCIAL*%0A*ENTRADA CPO:* ${tCPO.toLocaleString()} KG%0A*SALIDA RBD:* ${tRBD.toLocaleString()} KG%0A*PROD AGL:* ${tAGL.toLocaleString()} KG%0A*MERMA:* ${merma.toFixed(2)}%25`;
     window.open(`https://wa.me/?text=${msg}`, '_blank');
   };
 
@@ -123,13 +143,13 @@ export default function ReporteFinalAuditoria() {
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-white/5 text-zinc-500 border-b border-white/10 font-black">
-                  <th className="p-4">FECHA / HORA</th>
-                  <th className="p-4">OPERACIÓN</th>
-                  <th className="p-4 text-right">L. ANTERIOR</th>
-                  <th className="p-4 text-right text-white">L. ACTUAL</th>
-                  <th className="p-4 text-right text-orange-500">KG RESULTANTES</th>
-                  <th className="p-4 text-center">EVIDENCIA</th>
-                  <th className="p-4 text-center">EDIT</th>
+                  <th className="p-4 text-[9px]">FECHA / HORA</th>
+                  <th className="p-4 text-[9px]">OPERACIÓN</th>
+                  <th className="p-4 text-right text-[9px]">L. ANTERIOR</th>
+                  <th className="p-4 text-right text-[9px] text-white">L. ACTUAL</th>
+                  <th className="p-4 text-right text-orange-500 text-[9px]">KG RESULTANTES</th>
+                  <th className="p-4 text-center text-[9px]">EVIDENCIA</th>
+                  <th className="p-4 text-center text-[9px]">EDIT</th>
                 </tr>
               </thead>
               <tbody>
@@ -142,7 +162,7 @@ export default function ReporteFinalAuditoria() {
                     <td className="p-4 text-right font-black text-orange-400">{r.kgResultantes?.toLocaleString()}</td>
                     <td className="p-4 text-center">{r.foto_url && <a href={r.foto_url} target="_blank" className="bg-zinc-800 p-2 rounded-lg inline-block">📸</a>}</td>
                     <td className="p-4 text-center">
-                      <button onClick={() => editarRegistro(r.id, r.valor_lectura)} className="bg-blue-500/10 p-2 rounded-lg text-blue-500 hover:bg-blue-500 shadow-md">✏️</button>
+                      <button onClick={() => editarRegistro(r.id, r.valor_lectura)} className="bg-blue-500/10 p-2 rounded-lg text-blue-500 hover:bg-blue-500 hover:text-white transition-all shadow-md">✏️</button>
                     </td>
                   </tr>
                 ))}
@@ -151,48 +171,28 @@ export default function ReporteFinalAuditoria() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
+             <table className="w-full text-left">
               <thead>
                 <tr className="bg-blue-900/20 text-blue-400 border-b border-blue-500/10 font-black text-[8px]">
                   <th className="p-3">FECHA</th>
-                  <th className="p-3 text-right">INV. INICIAL DS3</th>
                   <th className="p-3 text-right">TOTAL CPO (KG)</th>
                   <th className="p-3 text-right">TOTAL RBD (KG)</th>
-                  <th className="p-3 text-right">AGL</th>
-                  <th className="p-3 text-right">REPROCESO</th>
-                  <th className="p-3 text-right">INV. FINAL DS3</th>
                   <th className="p-3 text-right text-white">BALANCE CPO</th>
                   <th className="p-3 text-right text-red-500">% MERMA</th>
                 </tr>
               </thead>
               <tbody className="text-[10px]">
-                {balanceData.map((b, i) => {
-                  const totalCPO = b.total_cpo || 0;
-                  const totalRBD = b.total_rbd || 0;
-                  const agl = b.agl_produccion || 0;
-                  const invIni = b.inventario_inicial_ds3 || 0;
-                  const invFin = b.inventario_final_ds3 || 0;
-                  // Fórmula Excel: TOTAL CPO + INV INICIAL - INV FINAL
-                  const balanceCPO = totalCPO + invIni - invFin;
-                  const diferencia = balanceCPO - (totalRBD + agl);
-                  const merma = balanceCPO > 0 ? (diferencia / balanceCPO) * 100 : 0;
-
-                  return (
-                    <tr key={i} className="border-b border-white/5 hover:bg-blue-500/5 transition-all">
-                      <td className="p-3 font-bold">{b.fecha}</td>
-                      <td className="p-3 text-right text-zinc-500">{invIni.toLocaleString()}</td>
-                      <td className="p-3 text-right tabular-nums font-bold">{totalCPO.toLocaleString()}</td>
-                      <td className="p-3 text-right tabular-nums text-emerald-400">{totalRBD.toLocaleString()}</td>
-                      <td className="p-3 text-right text-orange-300">{agl.toLocaleString()}</td>
-                      <td className="p-3 text-right text-zinc-500">{b.reproceso || 0}</td>
-                      <td className="p-3 text-right text-zinc-500">{invFin.toLocaleString()}</td>
-                      <td className="p-3 text-right tabular-nums font-black text-white bg-white/5">{balanceCPO.toLocaleString()}</td>
-                      <td className={`p-3 text-right font-black ${merma > 1 ? 'text-red-500' : 'text-emerald-500'}`}>
-                        {merma.toFixed(2)}%
-                      </td>
-                    </tr>
-                  );
-                })}
+                {balanceData.map((b, i) => (
+                  <tr key={i} className="border-b border-white/5 hover:bg-blue-500/5 transition-all">
+                    <td className="p-3 font-bold">{b.fecha}</td>
+                    <td className="p-3 text-right tabular-nums">{(b.total_cpo || 0).toLocaleString()}</td>
+                    <td className="p-3 text-right tabular-nums text-emerald-400">{(b.total_rbd || 0).toLocaleString()}</td>
+                    <td className="p-3 text-right tabular-nums font-black text-white">{(b.balance_acp || 0).toLocaleString()}</td>
+                    <td className={`p-3 text-right font-black ${b.porcentaje_merma > 1 ? 'text-red-500' : 'text-zinc-500'}`}>
+                      {(b.porcentaje_merma || 0).toFixed(2)}%
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
