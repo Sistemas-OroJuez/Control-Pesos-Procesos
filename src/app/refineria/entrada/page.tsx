@@ -17,6 +17,7 @@ export default function EntradaACP() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // PERSISTENCIA
   useEffect(() => {
     const backup = localStorage.getItem('backup_entrada_acp');
     if (backup) {
@@ -82,50 +83,69 @@ export default function EntradaACP() {
     }
   };
 
-  // --- NUEVA FUNCIÓN UNIFICADA: GUARDA Y LUEGO ABRE WHATSAPP ---
-  const handleConfirmarYEnviarWhatsApp = async () => {
-    if (!datos?.valor_lectura) {
-        alert("No hay datos para guardar.");
+  // FUNCIÓN ORIGINAL DE GUARDADO (Se mantiene igual)
+  const handleConfirmarYGuardar = async () => {
+    if (!datos?.valor_lectura) return;
+    setLoading(true);
+    setStatusText('GUARDANDO EN BASE DE DATOS...');
+    
+    const { error } = await supabase.from('operaciones_refineria').insert([{
+        tipo_operacion: 'ENTRADA_ACP',
+        valor_lectura: parseFloat(datos.valor_lectura),
+        foto_url: fotoUrl,
+        observaciones: observaciones,
+        variedad: variedad,
+        es_reproceso: esReproceso,
+        usuario_registro: 'Operador Entrada'
+    }]);
+
+    if (error) {
+        alert("Error al guardar");
+        setLoading(false);
+    } else {
+        resetTodo();
+        alert("Guardado exitosamente");
+        setLoading(false);
+    }
+  };
+
+  // --- FUNCIÓN DE WHATSAPP ACTUALIZADA CON GUARDADO AUTOMÁTICO ---
+  const handleWhatsApp = async () => {
+    if (!datos?.valor_lectura) return;
+    
+    // Primero guardamos la información
+    setLoading(true);
+    setStatusText('GUARDANDO Y PREPARANDO WHATSAPP...');
+
+    const { error } = await supabase.from('operaciones_refineria').insert([{
+        tipo_operacion: 'ENTRADA_ACP',
+        valor_lectura: parseFloat(datos.valor_lectura),
+        foto_url: fotoUrl,
+        observaciones: observaciones,
+        variedad: variedad,
+        es_reproceso: esReproceso,
+        usuario_registro: 'Operador Entrada'
+    }]);
+
+    if (error) {
+        alert("Error al guardar antes de enviar: " + error.message);
+        setLoading(false);
         return;
     }
 
-    setLoading(true);
-    setStatusText('GUARDANDO Y GENERANDO REPORTE...');
+    // Si guardó correctamente, procedemos a enviar el mensaje
+    const mensaje = `*REPORTES REFINERÍA - ENTRADA ACP*%0A` +
+                    `*VARIEDAD:* ${variedad}%0A` +
+                    `*PROCESO:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
+                    `*VALOR REGISTRADO:* ${Number(datos.valor_lectura).toLocaleString()} KG%0A` +
+                    `*NOTAS:* ${observaciones || 'Sin observaciones'}%0A%0A` +
+                    `*EVIDENCIA:* ${fotoUrl}%0A%0A` +
+                    `✅ _REGISTRO GUARDADO Y CONFIRMADO_`;
 
-    try {
-        // 1. GUARDAR EN SUPABASE
-        const { error } = await supabase.from('operaciones_refineria').insert([{
-            tipo_operacion: 'ENTRADA_ACP',
-            valor_lectura: parseFloat(datos.valor_lectura),
-            foto_url: fotoUrl,
-            observaciones: observaciones,
-            variedad: variedad,
-            es_reproceso: esReproceso,
-            usuario_registro: 'Operador Entrada'
-        }]);
-
-        if (error) throw error;
-
-        // 2. SI GUARDÓ BIEN, PREPARAR Y ABRIR WHATSAPP
-        const mensaje = `*REPORTES REFINERÍA - ENTRADA ACP*%0A` +
-                        `*VARIEDAD:* ${variedad}%0A` +
-                        `*PROCESO:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
-                        `*VALOR REGISTRADO:* ${Number(datos.valor_lectura).toLocaleString()} KG%0A` +
-                        `*NOTAS:* ${observaciones || 'Sin observaciones'}%0A%0A` +
-                        `*EVIDENCIA:* ${fotoUrl}%0A%0A` +
-                        `✅ _REGISTRO CONFIRMADO EN EL SISTEMA_`;
-
-        window.open(`https://wa.me/?text=${mensaje}`, '_blank');
-
-        // 3. LIMPIAR TODO TRAS EL ÉXITO
-        resetTodo();
-        alert("Registro guardado y reporte enviado.");
-
-    } catch (err: any) {
-        alert("Error al procesar: " + err.message);
-    } finally {
-        setLoading(false);
-    }
+    window.open(`https://wa.me/?text=${mensaje}`, '_blank');
+    
+    resetTodo();
+    setLoading(false);
   };
 
   const resetTodo = () => {
@@ -185,21 +205,20 @@ export default function EntradaACP() {
             <textarea 
               value={observaciones} 
               onChange={(e) => setObservaciones(e.target.value)} 
-              className="w-full bg-zinc-900 rounded-[25px] p-6 text-[10px] text-white border border-white/5 focus:border-orange-500/50 outline-none transition-all" 
-              placeholder="NOTAS ADICIONALES (OPCIONAL)..." 
-              rows={3}
+              className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" 
+              placeholder="NOTAS ADICIONALES..." 
             />
 
-            {/* BOTÓN PRINCIPAL ACTUALIZADO */}
-            <button 
-              onClick={handleConfirmarYEnviarWhatsApp} 
-              className="w-full py-6 bg-emerald-600 rounded-[30px] flex flex-col items-center justify-center gap-1 shadow-xl shadow-emerald-900/20 active:scale-95 transition-all"
-            >
-              <span className="text-[10px] font-black text-white tracking-widest">CONFIRMAR Y ENVIAR WHATSAPP</span>
-              <span className="text-[8px] text-emerald-200 font-bold opacity-70">SE GUARDARÁ AUTOMÁTICAMENTE</span>
+            {/* BOTÓN WHATSAPP CON GUARDADO AUTOMÁTICO */}
+            <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3">
+              <span className="text-lg">💬</span>
+              <span className="text-[10px] font-black text-emerald-400">ENVIAR REPORTE Y GUARDAR</span>
             </button>
             
-            <button onClick={resetTodo} className="w-full py-4 text-[9px] font-black text-zinc-600 tracking-[0.2em]">DESCARTAR Y REPETIR</button>
+            <div className="grid grid-cols-2 gap-3">
+                <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400">REINTENTAR</button>
+                <button onClick={handleConfirmarYGuardar} className="py-5 bg-blue-600 rounded-2xl font-black text-[9px]">CONFIRMAR Y GUARDAR</button>
+            </div>
         </div>
       )}
     </div>
