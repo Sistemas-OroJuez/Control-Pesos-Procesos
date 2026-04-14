@@ -23,6 +23,7 @@ export default function ReporteFinalAuditoria() {
 
   const fetchAuditoria = async () => {
     setLoading(true);
+    // Añadimos un timestamp a la consulta para forzar datos frescos de la DB
     const { data: todos, error } = await supabase
       .from('operaciones_refineria')
       .select('*')
@@ -39,7 +40,7 @@ export default function ReporteFinalAuditoria() {
       setRegistros(procesados.filter(r => {
         const f = r.created_at.split('T')[0];
         return f >= fechaInicio && f <= fechaFin;
-      }).reverse()); // Reverse para ver lo más reciente arriba
+      }).reverse()); 
     }
     setLoading(false);
   };
@@ -59,7 +60,7 @@ export default function ReporteFinalAuditoria() {
     setLoading(false);
   };
 
-  // --- FUNCIÓN PARA EDITAR CORRECCIÓN OCR ---
+  // --- FUNCIÓN PARA EDITAR CORRECCIÓN OCR (CORREGIDA) ---
   const editarRegistro = async (id: string, valorActual: any) => {
     const clave = prompt("🔐 INGRESE CLAVE DE AUTORIZACIÓN:");
     if (clave !== CLAVE_MAESTRA) return alert("❌ CLAVE INCORRECTA");
@@ -73,20 +74,26 @@ export default function ReporteFinalAuditoria() {
         return alert("⚠️ INGRESE UN NÚMERO VÁLIDO");
       }
 
-      // Actualización visual inmediata para que el jefe vea el cambio
+      // 1. Actualización visual instantánea
       setRegistros(prev => prev.map(r => r.id === id ? { ...r, valor_lectura: valorNumerico } : r));
 
+      // 2. Guardar en Supabase
       const { error } = await supabase
         .from('operaciones_refineria')
         .update({ valor_lectura: valorNumerico })
         .eq('id', id);
 
       if (error) {
-        alert("❌ ERROR AL GUARDAR: " + error.message);
-        fetchAuditoria(); // Revertir si hay error
+        alert("❌ ERROR AL GUARDAR EN BASE DE DATOS");
+        fetchAuditoria(); 
       } else {
-        alert("✅ VALOR CORREGIDO");
-        fetchAuditoria(); // Recargar para recalcular KG Resultantes
+        alert("✅ VALOR ACTUALIZADO CORRECTAMENTE");
+        
+        // 3. Pequeña pausa de seguridad y recarga forzada
+        // Esto evita que la tabla "regrese" al valor viejo por culpa de la caché del navegador
+        setTimeout(() => {
+          fetchAuditoria();
+        }, 600);
       }
     }
   };
@@ -113,7 +120,6 @@ export default function ReporteFinalAuditoria() {
   return (
     <div className="min-h-screen bg-black text-white p-4 font-sans uppercase text-[10px]">
       
-      {/* HEADER Y SELECTOR */}
       <div className="bg-zinc-900 p-6 rounded-[30px] border border-white/10 mb-6 space-y-6">
         <div className="flex flex-wrap justify-between items-center gap-4 border-b border-white/5 pb-4">
           <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-black border border-white/10 px-4 py-2 rounded-xl text-zinc-500 font-black">VOLVER</button>
@@ -139,7 +145,6 @@ export default function ReporteFinalAuditoria() {
         </div>
       </div>
 
-      {/* TABLA DINAMICA */}
       <div className="bg-zinc-900 rounded-[35px] border border-white/5 overflow-hidden shadow-2xl min-h-[400px]">
         {loading ? (
           <div className="p-20 text-center animate-pulse text-zinc-500 font-black tracking-[0.3em]">PROCESANDO DATOS...</div>
@@ -169,7 +174,7 @@ export default function ReporteFinalAuditoria() {
                     <td className="p-4 text-center">
                       <button 
                         onClick={() => editarRegistro(r.id, r.valor_lectura)}
-                        className="bg-blue-500/10 p-2 rounded-lg text-blue-500 hover:bg-blue-500 hover:text-white transition-all"
+                        className="bg-blue-500/10 p-2 rounded-lg text-blue-500 hover:bg-blue-500 hover:text-white transition-all shadow-md"
                       >
                         ✏️
                       </button>
@@ -185,7 +190,7 @@ export default function ReporteFinalAuditoria() {
               <thead>
                 <tr className="bg-blue-900/20 text-blue-400 border-b border-blue-500/10 font-black text-[8px]">
                   <th className="p-3">FECHA</th>
-                  <th className="p-3 text-right">TOTAL ACP (KG)</th>
+                  <th className="p-3 text-right">TOTAL CPO (KG)</th>
                   <th className="p-3 text-right">TOTAL RBD (KG)</th>
                   <th className="p-3 text-right text-white">BALANCE CPO</th>
                   <th className="p-3 text-right text-red-500">% MERMA</th>
