@@ -134,7 +134,7 @@ export default function EntradaACP() {
     }
 
     // Si guardó correctamente, procedemos a enviar el mensaje
-    const mensaje = `*REPORTES REFINERÍA - ENTRADA ACP*%0A` +
+    const mensaje = `*LECTURA REFINERÍA - ENTRADA ACP*%0A` +
                     `*VARIEDAD:* ${variedad}%0A` +
                     `*PROCESO:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
                     `*VALOR REGISTRADO:* ${Number(datos.valor_lectura).toLocaleString()} KG%0A` +
