@@ -77,7 +77,7 @@ export default function ReporteFinalAuditoria() {
 
     const msg = `*📊 RESUMEN BALANCE MÁSICO*%0A` +
                 `*PERIODO:* ${fechaInicio} al ${fechaFin}%0A%0A` +
-                `*TOTAL ENTRADA CPO:* ${tCPO.toLocaleString()} KG%0A` +
+                `*TOTAL ENTRADA ACP:* ${tCPO.toLocaleString()} KG%0A` +
                 `*TOTAL SALIDA RBD:* ${tRBD.toLocaleString()} KG%0A` +
                 `*TOTAL PROD. AGL:* ${tAGL.toLocaleString()} KG%0A%0A` +
                 `*MERMA GLOBAL:* ${avgMerma.toFixed(2)}%25%0A` +
