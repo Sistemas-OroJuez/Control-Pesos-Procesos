@@ -5,8 +5,8 @@ import * as XLSX from 'xlsx';
 
 export default function ReporteFinalAuditoria() {
   const [loading, setLoading] = useState(true);
-  const [registros, setRegistros] = useState<any[]>([]); // Auditoría
-  const [balanceData, setBalanceData] = useState<any[]>([]); // Balance Gerencial
+  const [registros, setRegistros] = useState<any[]>([]); 
+  const [balanceData, setBalanceData] = useState<any[]>([]); 
   const [modoVista, setModoVista] = useState<'AUDITORIA' | 'GERENCIAL'>('AUDITORIA');
   
   const [fechaInicio, setFechaInicio] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
@@ -20,7 +20,6 @@ export default function ReporteFinalAuditoria() {
     else fetchBalanceGerencial();
   }, [fechaInicio, fechaFin, modoVista]);
 
-  // --- FETCH AUDITORIA CON LÓGICA DE KG ---
   const fetchAuditoria = async () => {
     setLoading(true);
     const { data: todos, error } = await supabase
@@ -42,7 +41,7 @@ export default function ReporteFinalAuditoria() {
       setRegistros(procesados.filter(r => {
         const f = r.created_at.split('T')[0];
         return f >= fechaInicio && f <= fechaFin;
-      }).reverse()); // Mostrar lo más reciente primero
+      }).reverse());
     }
     setLoading(false);
   };
@@ -55,20 +54,34 @@ export default function ReporteFinalAuditoria() {
     setLoading(false);
   };
 
-  // --- FUNCIÓN PARA EDITAR LECTURA ---
-  const editarRegistro = async (id: string, valorActual: string) => {
+  // --- FUNCIÓN PARA EDITAR CORREGIDA ---
+  const editarRegistro = async (id: string, valorActual: any) => {
     const clave = prompt("INGRESE CLAVE DE AUTORIZACIÓN:");
     if (clave !== CLAVE_MAESTRA) return alert("CLAVE INCORRECTA");
 
-    const nuevoValor = prompt("NUEVO VALOR DE LECTURA (OCR):", valorActual);
-    if (nuevoValor !== null && nuevoValor !== "") {
+    const nuevoValorStr = prompt("NUEVO VALOR DE LECTURA (OCR):", valorActual);
+    
+    if (nuevoValorStr !== null && nuevoValorStr !== "") {
+      const valorNumerico = parseFloat(nuevoValorStr);
+      
+      if (isNaN(valorNumerico)) {
+        return alert("POR FAVOR INGRESE UN NÚMERO VÁLIDO");
+      }
+
+      setLoading(true);
       const { error } = await supabase
         .from('operaciones_refineria')
-        .update({ valor_lectura: nuevoValor })
+        .update({ valor_lectura: valorNumerico })
         .eq('id', id);
 
-      if (error) alert("ERROR AL GUARDAR");
-      else fetchAuditoria(); // Recargar para recalcular KG
+      if (error) {
+        alert("ERROR AL GUARDAR: " + error.message);
+      } else {
+        alert("✅ CAMBIO GUARDADO EN BASE DE DATOS");
+        // Forzamos la recarga completa para ver los nuevos KG
+        await fetchAuditoria();
+      }
+      setLoading(false);
     }
   };
 
@@ -96,7 +109,7 @@ export default function ReporteFinalAuditoria() {
           <input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white" />
           <button onClick={exportarExcel} className="bg-zinc-800 py-3 rounded-xl font-black">📊 EXCEL</button>
           <button onClick={() => window.print()} className="bg-zinc-800 py-3 rounded-xl font-black">📄 PDF</button>
-          <button onClick={() => alert("WhatsApp enviado")} className="bg-emerald-600 py-3 rounded-xl font-black">💬 WHATSAPP</button>
+          <button onClick={() => alert("Función WhatsApp lista")} className="bg-emerald-600 py-3 rounded-xl font-black">💬 WHATSAPP</button>
         </div>
       </div>
 
@@ -105,13 +118,13 @@ export default function ReporteFinalAuditoria() {
           <table className="w-full text-left">
             <thead className="bg-white/5 text-zinc-500 font-black border-b border-white/10">
               <tr>
-                <th className="p-4">FECHA / HORA</th>
-                <th className="p-4">OPERACIÓN</th>
-                <th className="p-4 text-right">L. ANTERIOR</th>
-                <th className="p-4 text-right text-white">LECTURA ACTUAL</th>
-                <th className="p-4 text-right text-orange-500">KG RESULTANTES</th>
-                <th className="p-4 text-center">EVIDENCIA</th>
-                <th className="p-4 text-center">EDIT</th>
+                <th className="p-4 text-[9px]">FECHA / HORA</th>
+                <th className="p-4 text-[9px]">OPERACIÓN</th>
+                <th className="p-4 text-right text-[9px]">L. ANTERIOR</th>
+                <th className="p-4 text-right text-white text-[9px]">LECTURA ACTUAL</th>
+                <th className="p-4 text-right text-orange-500 text-[9px]">KG RESULTANTES</th>
+                <th className="p-4 text-center text-[9px]">EVIDENCIA</th>
+                <th className="p-4 text-center text-[9px]">EDIT</th>
               </tr>
             </thead>
             <tbody>
@@ -120,29 +133,30 @@ export default function ReporteFinalAuditoria() {
                   <td className="p-4 text-zinc-500">{new Date(r.created_at).toLocaleString()}</td>
                   <td className="p-4 font-bold">{r.tipo_operacion}</td>
                   <td className="p-4 text-right text-zinc-600">{r.lecturaAnterior?.toLocaleString()}</td>
-                  <td className="p-4 text-right font-bold text-white bg-white/5">{parseFloat(r.valor_lectura)?.toLocaleString()}</td>
+                  <td className="p-4 text-right font-bold text-white bg-white/5">{parseFloat(r.valor_lectura || 0).toLocaleString()}</td>
                   <td className="p-4 text-right font-black text-orange-400">{r.kgResultantes?.toLocaleString()}</td>
-                  <td className="p-4 text-center">{r.foto_url && <a href={r.foto_url} target="_blank">📸</a>}</td>
+                  <td className="p-4 text-center">{r.foto_url && <a href={r.foto_url} target="_blank" className="text-xl">📸</a>}</td>
                   <td className="p-4 text-center">
                     <button 
                       onClick={() => editarRegistro(r.id, r.valor_lectura)}
-                      className="text-blue-500 hover:scale-125 transition-transform"
-                    > ✏️ </button>
+                      className="bg-blue-500/10 p-2 rounded-lg text-blue-500 hover:bg-blue-500 hover:text-white transition-all shadow-lg"
+                    >
+                      ✏️
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          /* TABLA GERENCIAL SIMILAR AL EXCEL */
           <table className="w-full text-left">
             <thead className="bg-blue-900/20 text-blue-400 font-black border-b border-blue-500/20">
               <tr>
                 <th className="p-4">FECHA</th>
-                <th className="p-4 text-right text-[8px]">TOTAL CPO (ENTRADA)</th>
-                <th className="p-4 text-right text-[8px]">TOTAL RBD (SALIDA)</th>
-                <th className="p-4 text-right text-[8px]">AGL PROD.</th>
-                <th className="p-4 text-right text-white">BALANCE CPO</th>
+                <th className="p-4 text-right">TOTAL CPO</th>
+                <th className="p-4 text-right">TOTAL RBD</th>
+                <th className="p-4 text-right">AGL PROD.</th>
+                <th className="p-4 text-right text-white">BALANCE</th>
                 <th className="p-4 text-right text-red-500">% MERMA</th>
               </tr>
             </thead>
