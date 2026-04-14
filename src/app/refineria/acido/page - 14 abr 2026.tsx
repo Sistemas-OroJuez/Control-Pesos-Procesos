@@ -10,15 +10,12 @@ export default function AcidoGraso() {
   const [statusText, setStatusText] = useState('');
   const [datos, setDatos] = useState<any>(null); 
   const [fotoUrl, setFotoUrl] = useState<string | null>(null); 
+  // Cambiamos a string para manejar el input vacío fácilmente y evitar el cálculo automático con 0
   const [vacioLectura, setVacioLectura] = useState<string>('');
   const [tanque, setTanque] = useState<'T1' | 'T2'>('T1');
   const [variedad, setVariedad] = useState('ALTO OLEICO');
   const [esReproceso, setEsReproceso] = useState(false);
   const [observaciones, setObservaciones] = useState('');
-  
-  // NUEVOS CAMPOS DE EGRESO
-  const [egresoVenta, setEgresoVenta] = useState<string>('0');
-  const [egresoJaboneria, setEgresoJaboneria] = useState<string>('0');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -27,12 +24,16 @@ export default function AcidoGraso() {
     T2: { factor: 211, alturaMax: 610 }
   };
 
+  // LÓGICA DE CÁLCULO CORREGIDA
   const calcularKg = () => {
     const valorNumerico = parseFloat(vacioLectura);
+    // Si no hay nada escrito o el valor es 0, devolvemos 0 para no confundir al operador
     if (!vacioLectura || isNaN(valorNumerico) || valorNumerico === 0) return 0;
+
     const config = CONFIG_TANQUES[tanque];
     const alturaReal = config.alturaMax - valorNumerico;
     const kgResult = alturaReal * config.factor;
+    
     return kgResult > 0 ? kgResult : 0;
   };
 
@@ -48,8 +49,6 @@ export default function AcidoGraso() {
         setVariedad(p.variedad || 'ALTO OLEICO');
         setEsReproceso(p.esReproceso || false);
         setObservaciones(p.observaciones || '');
-        setEgresoVenta(p.egresoVenta || '0');
-        setEgresoJaboneria(p.egresoJaboneria || '0');
       }
     }
   }, []);
@@ -57,10 +56,10 @@ export default function AcidoGraso() {
   useEffect(() => {
     if (fotoUrl) {
       localStorage.setItem('backup_acido_graso', JSON.stringify({
-        fotoUrl, vacioLectura, tanque, variedad, esReproceso, observaciones, egresoVenta, egresoJaboneria
+        fotoUrl, vacioLectura, tanque, variedad, esReproceso, observaciones
       }));
     }
-  }, [fotoUrl, vacioLectura, tanque, variedad, esReproceso, observaciones, egresoVenta, egresoJaboneria]);
+  }, [fotoUrl, vacioLectura, tanque, variedad, esReproceso, observaciones]);
 
   const resetTodo = () => {
     localStorage.removeItem('backup_acido_graso'); 
@@ -69,8 +68,6 @@ export default function AcidoGraso() {
     setFotoUrl(null);
     setVacioLectura('');
     setObservaciones('');
-    setEgresoVenta('0');
-    setEgresoJaboneria('0');
     setStatusText('');
   };
 
@@ -106,8 +103,6 @@ export default function AcidoGraso() {
           tipo_operacion: 'ACIDO_GRASO',
           valor_lectura: kgFinales, 
           detalle_vacio: parseFloat(vacioLectura),
-          egreso_venta: parseFloat(egresoVenta),
-          egreso_jaboneria: parseFloat(egresoJaboneria),
           tanque_id: tanque,
           foto_url: fotoUrl,
           observaciones: observaciones,
@@ -122,55 +117,17 @@ export default function AcidoGraso() {
     finally { setLoading(false); }
   };
 
-  const handleWhatsApp = async () => {
-    if (!vacioLectura || parseFloat(vacioLectura) <= 0) {
-      alert("Ingrese lectura de vacío antes de enviar.");
-      return;
-    }
-
-    setLoading(true);
-    setStatusText('Guardando y preparando WhatsApp...');
-
-    try {
-      const kg = calcularKg();
-      // Primero guardamos en base de datos
-      const { error } = await supabase.from('operaciones_refineria').insert([{
-          tipo_operacion: 'ACIDO_GRASO',
-          valor_lectura: kg, 
-          detalle_vacio: parseFloat(vacioLectura),
-          egreso_venta: parseFloat(egresoVenta),
-          egreso_jaboneria: parseFloat(egresoJaboneria),
-          tanque_id: tanque,
-          foto_url: fotoUrl,
-          observaciones: observaciones,
-          usuario_registro: 'Operador Ácido Graso',
-          variedad: variedad,
-          es_reproceso: esReproceso
-      }]);
-
-      if (error) throw error;
-
-      // Si guardó bien, disparamos WhatsApp
-      const msg = `*REPORTE ÁCIDO GRASO*%0A` +
-                  `*Tanque:* ${tanque}%0A` +
-                  `*Lectura Vacío:* ${vacioLectura} CM%0A` +
-                  `*Total Calculado:* ${kg.toLocaleString()} KG%0A` +
-                  `*Egreso Venta:* ${egresoVenta} KG%0A` +
-                  `*Egreso Jabonería:* ${egresoJaboneria} KG%0A` +
-                  `*Variedad:* ${variedad}%0A` +
-                  `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
-                  `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
-                  `*Foto:* ${fotoUrl || 'No adjunta'}%0A%0A` +
-                  `✅ _REGISTRO GUARDADO EN SISTEMA_`;
-
-      window.open(`https://wa.me/?text=${msg}`, '_blank');
-      resetTodo(); 
-    } catch (err: any) {
-      alert("Error al guardar: " + err.message);
-    } finally {
-      setLoading(false);
-      setStatusText('');
-    }
+  const handleWhatsApp = () => {
+    const kg = calcularKg();
+    const msg = `*REPORTE ÁCIDO GRASO*%0A` +
+                `*Tanque:* ${tanque}%0A` +
+                `*Lectura Vacío:* ${vacioLectura} CM%0A` +
+                `*Total Calculado:* ${kg.toLocaleString()} KG%0A` +
+                `*Variedad:* ${variedad}%0A` +
+                `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
+                `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
+                `*Foto:* ${fotoUrl || 'No adjunta'}`;
+    window.open(`https://wa.me/?text=${msg}`, '_blank');
   };
 
   return (
@@ -229,28 +186,6 @@ export default function AcidoGraso() {
                   <p className="text-3xl font-black text-white">{calcularKg().toLocaleString()} KG</p>
                 </div>
             </div>
-
-            {/* NUEVOS CAMPOS DE EGRESO */}
-            <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                    <p className="text-[9px] text-zinc-500 font-black">EGRESO VENTA (KG)</p>
-                    <input 
-                      type="number"
-                      value={egresoVenta}
-                      onChange={(e) => setEgresoVenta(e.target.value)}
-                      className="w-full bg-black border border-white/10 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-orange-500"
-                    />
-                </div>
-                <div className="space-y-2">
-                    <p className="text-[9px] text-zinc-500 font-black">EGRESO JABONERÍA (KG)</p>
-                    <input 
-                      type="number"
-                      value={egresoJaboneria}
-                      onChange={(e) => setEgresoJaboneria(e.target.value)}
-                      className="w-full bg-black border border-white/10 rounded-xl p-3 text-sm font-bold text-white outline-none focus:border-orange-500"
-                    />
-                </div>
-            </div>
             
             <textarea 
               value={observaciones} 
@@ -259,9 +194,9 @@ export default function AcidoGraso() {
               placeholder="NOTAS DE LA OPERACIÓN..." 
             />
 
-            <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all">
+            <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3">
               <span className="text-lg">💬</span>
-              <span className="text-[10px] font-black text-emerald-400">ENVIAR REPORTE Y GUARDAR</span>
+              <span className="text-[10px] font-black text-emerald-400">NOTIFICAR POR WHATSAPP</span>
             </button>
             
             <div className="grid grid-cols-2 gap-3">
