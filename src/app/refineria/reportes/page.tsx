@@ -61,6 +61,7 @@ export default function ReporteFinalAuditoria() {
     setLoading(false);
   };
 
+  // --- FUNCIÓN DE EDICIÓN CON PERSISTENCIA VERIFICADA ---
   const editarRegistro = async (id: string, valorActual: any) => {
     const clave = prompt("🔐 INGRESE CLAVE DE AUTORIZACIÓN:");
     if (clave !== CLAVE_MAESTRA) return alert("❌ CLAVE INCORRECTA");
@@ -73,25 +74,25 @@ export default function ReporteFinalAuditoria() {
 
       setLoading(true);
 
-      // 1. Actualización visual instantánea (Optimistic UI)
+      // 1. Cambio visual inmediato (Optimistic UI)
       setRegistros(prev => prev.map(r => r.id === id ? { ...r, valor_lectura: valorNumerico } : r));
 
-      // 2. Intento de persistencia en la Nube
+      // 2. Persistencia en Supabase
       const { data, error } = await supabase
         .from('operaciones_refineria')
         .update({ valor_lectura: valorNumerico })
         .eq('id', id)
-        .select(); // El .select() obliga a Supabase a devolver el cambio realizado
+        .select(); // Verifica que la fila cambió realmente
 
       if (error) {
         alert("❌ ERROR EN DB: " + error.message);
         fetchAuditoria(); 
       } else if (!data || data.length === 0) {
-        alert("⚠️ EL CAMBIO NO SE REFLEJÓ EN LA BASE DE DATOS. Verifica los permisos de la tabla.");
+        alert("⚠️ EL CAMBIO NO SE REFLEJÓ. REVISA LOS PERMISOS RLS EN SUPABASE.");
         fetchAuditoria();
       } else {
-        alert("✅ VALOR GUARDADO: " + data[0].valor_lectura);
-        // Pequeña espera para sincronización de servidores y recarga limpia
+        alert("✅ VALOR GUARDADO EN LA NUBE: " + data[0].valor_lectura);
+        // Espera un momento para que los cálculos de KG se sincronicen
         setTimeout(() => fetchAuditoria(), 800);
       }
     }
