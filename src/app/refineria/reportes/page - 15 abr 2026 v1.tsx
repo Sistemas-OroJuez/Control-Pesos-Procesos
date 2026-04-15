@@ -194,58 +194,42 @@ export default function ReporteFinalAuditoria() {
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="bg-blue-900/20 text-blue-400 border-b border-blue-500/10 font-black text-[7px]">
-                  <th className="p-2">FECHA3</th>
-                  <th className="p-2 text-right">FLUJOMETRO INICIAL CPO</th>
-                  <th className="p-2 text-right">FLUJOMETRO FINAL CPO</th>
-                  <th className="p-2 text-right">FLUJOMETRO INICIAL RBD</th>
-                  <th className="p-2 text-right">FLUJOMETRO FINAL RBD</th>
-                  <th className="p-2 text-right">INVENTARIO INICIAL DS3</th>
-                  <th className="p-2 text-right">INVENTARIO FINAL DS3</th>
-                  <th className="p-2 text-right">TOTAL CPO</th>
-                  <th className="p-2 text-right">TOTAL RBD</th>
-                  <th className="p-2 text-right">AGL</th>
-                  <th className="p-2 text-right">REPROCESO</th>
-                  <th className="p-2 text-right">BALANCE CPO</th>
-                  <th className="p-2 text-right">DIFERENCIA</th>
-                  <th className="p-2 text-right text-red-500">% MERMA</th>
-                  <th className="p-2 text-right">% REPROCESO</th>
+                <tr className="bg-blue-900/20 text-blue-400 border-b border-blue-500/10 font-black text-[8px]">
+                  <th className="p-3">FECHA</th>
+                  <th className="p-3 text-right">INV. INICIAL DS3</th>
+                  <th className="p-3 text-right">TOTAL CPO (KG)</th>
+                  <th className="p-3 text-right">TOTAL RBD (KG)</th>
+                  <th className="p-3 text-right">AGL</th>
+                  <th className="p-3 text-right">REPROCESO</th>
+                  <th className="p-3 text-right">INV. FINAL DS3</th>
+                  <th className="p-3 text-right text-white">BALANCE CPO</th>
+                  <th className="p-3 text-right text-red-500">% MERMA</th>
                 </tr>
               </thead>
-              <tbody className="text-[9px]">
+              <tbody className="text-[10px]">
                 {balanceData.map((b, i) => {
                   const totalCPO = b.total_cpo || 0;
                   const totalRBD = b.total_rbd || 0;
                   const agl = b.agl_produccion || 0;
-                  const reproceso = b.reproceso || 0;
                   const invIni = b.inventario_inicial_ds3 || 0;
                   const invFin = b.inventario_final_ds3 || 0;
-                  
-                  // Cálculos siguiendo la lógica del Excel
                   const balanceCPO = totalCPO + invIni - invFin;
                   const diferencia = balanceCPO - (totalRBD + agl);
                   const merma = balanceCPO > 0 ? (diferencia / balanceCPO) * 100 : 0;
-                  const porcReproceso = totalCPO > 0 ? (reproceso / totalCPO) * 100 : 0;
 
                   return (
                     <tr key={i} className="border-b border-white/5 hover:bg-blue-500/5 transition-all">
-                      <td className="p-2 font-bold">{b.fecha}</td>
-                      <td className="p-2 text-right text-zinc-500">{b.flujometro_inicial_cpo?.toLocaleString() || 0}</td>
-                      <td className="p-2 text-right text-zinc-500">{b.flujometro_final_cpo?.toLocaleString() || 0}</td>
-                      <td className="p-2 text-right text-zinc-500">{b.flujometro_inicial_rbd?.toLocaleString() || 0}</td>
-                      <td className="p-2 text-right text-zinc-500">{b.flujometro_final_rbd?.toLocaleString() || 0}</td>
-                      <td className="p-2 text-right text-zinc-400">{invIni.toLocaleString()}</td>
-                      <td className="p-2 text-right text-zinc-400">{invFin.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums font-bold text-white">{totalCPO.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums text-emerald-400 font-bold">{totalRBD.toLocaleString()}</td>
-                      <td className="p-2 text-right text-orange-300">{agl.toLocaleString()}</td>
-                      <td className="p-2 text-right text-zinc-500">{reproceso.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums font-black text-blue-400 bg-white/5">{balanceCPO.toLocaleString()}</td>
-                      <td className="p-2 text-right text-zinc-300">{diferencia.toLocaleString()}</td>
-                      <td className={`p-2 text-right font-black ${merma > 1 ? 'text-red-500' : 'text-emerald-500'}`}>
+                      <td className="p-3 font-bold">{b.fecha}</td>
+                      <td className="p-3 text-right text-zinc-500">{invIni.toLocaleString()}</td>
+                      <td className="p-3 text-right tabular-nums font-bold">{totalCPO.toLocaleString()}</td>
+                      <td className="p-3 text-right tabular-nums text-emerald-400">{totalRBD.toLocaleString()}</td>
+                      <td className="p-3 text-right text-orange-300">{agl.toLocaleString()}</td>
+                      <td className="p-3 text-right text-zinc-500">{b.reproceso || 0}</td>
+                      <td className="p-3 text-right text-zinc-500">{invFin.toLocaleString()}</td>
+                      <td className="p-3 text-right tabular-nums font-black text-white bg-white/5">{balanceCPO.toLocaleString()}</td>
+                      <td className={`p-3 text-right font-black ${merma > 1 ? 'text-red-500' : 'text-emerald-500'}`}>
                         {merma.toFixed(2)}%
                       </td>
-                      <td className="p-2 text-right text-zinc-500">{porcReproceso.toFixed(2)}%</td>
                     </tr>
                   );
                 })}
