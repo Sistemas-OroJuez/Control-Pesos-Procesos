@@ -130,8 +130,8 @@ export default function ReporteFinalAuditoria() {
                 <label className="text-zinc-500 ml-2">VARIEDAD</label>
                 <select value={filtroVariedad} onChange={e => setFiltroVariedad(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white w-full">
                   <option value="TODOS">TODOS</option>
-                  <option value="CPO">CPO</option>
-                  <option value="HIBRIDO">HIBRIDO</option>
+                  <option value="ALTO OLEICO">ALTO OLEICO</option>
+                  <option value="GUINENSIS">GUINENSIS</option>
                 </select>
               </div>
               <div className="flex flex-col gap-1">
