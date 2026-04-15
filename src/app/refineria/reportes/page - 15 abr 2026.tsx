@@ -9,11 +9,8 @@ export default function ReporteFinalAuditoria() {
   const [balanceData, setBalanceData] = useState<any[]>([]); 
   const [modoVista, setModoVista] = useState<'AUDITORIA' | 'GERENCIAL'>('AUDITORIA');
   
-  // Estados para Filtros
   const [fechaInicio, setFechaInicio] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
   const [fechaFin, setFechaFin] = useState(new Date().toISOString().split('T')[0]);
-  const [filtroVariedad, setFiltroVariedad] = useState('TODOS');
-  const [filtroOperacion, setFiltroOperacion] = useState('TODOS');
 
   const CLAVE_MAESTRA = "orj2026";
   const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
@@ -21,7 +18,7 @@ export default function ReporteFinalAuditoria() {
   useEffect(() => {
     if (modoVista === 'AUDITORIA') fetchAuditoria();
     else fetchBalanceGerencial();
-  }, [fechaInicio, fechaFin, modoVista, filtroVariedad, filtroOperacion]);
+  }, [fechaInicio, fechaFin, modoVista]);
 
   const fetchAuditoria = async () => {
     setLoading(true);
@@ -41,10 +38,7 @@ export default function ReporteFinalAuditoria() {
       
       setRegistros(procesados.filter(r => {
         const f = r.created_at.split('T')[0];
-        const cumpleFecha = f >= fechaInicio && f <= fechaFin;
-        const cumpleVariedad = filtroVariedad === 'TODOS' || r.variedad === filtroVariedad;
-        const cumpleOperacion = filtroOperacion === 'TODOS' || r.tipo_operacion === filtroOperacion;
-        return cumpleFecha && cumpleVariedad && cumpleOperacion;
+        return f >= fechaInicio && f <= fechaFin;
       }).reverse()); 
     }
     setLoading(false);
@@ -112,44 +106,12 @@ export default function ReporteFinalAuditoria() {
             <button onClick={() => setModoVista('GERENCIAL')} className={`px-4 py-2 rounded-lg transition-all ${modoVista === 'GERENCIAL' ? 'bg-blue-600 text-white shadow-lg' : 'text-zinc-600'}`}>BALANCE GERENCIAL</button>
           </div>
         </div>
-
-        {/* SECCIÓN DE FILTROS */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-zinc-500 ml-2">INICIO</label>
-            <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white w-full" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-zinc-500 ml-2">FIN</label>
-            <input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white w-full" />
-          </div>
-          
-          {modoVista === 'AUDITORIA' && (
-            <>
-              <div className="flex flex-col gap-1">
-                <label className="text-zinc-500 ml-2">VARIEDAD</label>
-                <select value={filtroVariedad} onChange={e => setFiltroVariedad(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white w-full">
-                  <option value="TODOS">TODOS</option>
-                  <option value="CPO">CPO</option>
-                  <option value="HIBRIDO">HIBRIDO</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-zinc-500 ml-2">OPERACIÓN</label>
-                <select value={filtroOperacion} onChange={e => setFiltroOperacion(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white w-full">
-                  <option value="TODOS">TODAS</option>
-                  <option value="ENTRADA_ACP">ENTRADA_ACP</option>
-                  <option value="SALIDA_RBD">SALIDA_RBD</option>
-                  <option value="PRODUCCION_AGL">PRODUCCION_AGL</option>
-                </select>
-              </div>
-            </>
-          )}
-
-          <div className="flex items-end gap-2 md:col-span-2">
-            <button onClick={exportarExcel} className="flex-1 bg-zinc-800 py-3 rounded-xl font-black hover:bg-zinc-700 transition-all">📊 EXCEL</button>
-            <button onClick={enviarWhatsApp} className="flex-1 bg-emerald-600 py-3 rounded-xl font-black shadow-lg hover:bg-emerald-500 transition-all">💬 WHATSAPP</button>
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white" />
+          <input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white" />
+          <button onClick={exportarExcel} className="bg-zinc-800 py-3 rounded-xl font-black hover:bg-zinc-700 transition-all">📊 EXCEL</button>
+          <button onClick={() => window.print()} className="bg-zinc-800 py-3 rounded-xl font-black hover:bg-zinc-700 transition-all">📄 PDF</button>
+          <button onClick={enviarWhatsApp} className="bg-emerald-600 py-3 rounded-xl font-black shadow-lg hover:bg-emerald-500 transition-all">💬 WHATSAPP</button>
         </div>
       </div>
 
@@ -174,10 +136,7 @@ export default function ReporteFinalAuditoria() {
                 {registros.map((r, i) => (
                   <tr key={r.id || i} className="border-b border-white/5 hover:bg-white/5 transition-all">
                     <td className="p-4 text-zinc-500">{new Date(r.created_at).toLocaleString()}</td>
-                    <td className="p-4">
-                      <div className="font-bold">{r.tipo_operacion}</div>
-                      <div className="text-[8px] text-zinc-600">{r.variedad}</div>
-                    </td>
+                    <td className="p-4 font-bold">{r.tipo_operacion}</td>
                     <td className="p-4 text-right text-zinc-600">{r.lecturaAnterior?.toLocaleString()}</td>
                     <td className="p-4 text-right font-bold bg-white/5">{parseFloat(r.valor_lectura || 0).toLocaleString()}</td>
                     <td className="p-4 text-right font-black text-orange-400">{r.kgResultantes?.toLocaleString()}</td>
@@ -213,6 +172,7 @@ export default function ReporteFinalAuditoria() {
                   const agl = b.agl_produccion || 0;
                   const invIni = b.inventario_inicial_ds3 || 0;
                   const invFin = b.inventario_final_ds3 || 0;
+                  // Fórmula Excel: TOTAL CPO + INV INICIAL - INV FINAL
                   const balanceCPO = totalCPO + invIni - invFin;
                   const diferencia = balanceCPO - (totalRBD + agl);
                   const merma = balanceCPO > 0 ? (diferencia / balanceCPO) * 100 : 0;
