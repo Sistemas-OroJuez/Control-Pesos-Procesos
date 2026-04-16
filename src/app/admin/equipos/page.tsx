@@ -28,42 +28,55 @@ export default function GestionEquipos() {
     if (data) setEquipos(data);
   };
 
-  // --- FUNCIÓN DE ESCANEO Y CONEXIÓN BT ---
+  // --- FUNCIÓN DE ESCANEO CON FILTROS INDUSTRIALES ---
   const iniciarEscaneoBT = async () => {
     setBtStatus('SCANNING');
-    setLogBT(["Iniciando búsqueda de Micro Motion..."]);
+    setLogBT(["Buscando visor Micro Motion...", "Nota: Si no aparece, asegúrate que esté en modo visible."]);
 
     try {
-      // Solicitamos el dispositivo. 
-      // Nota: El navegador pedirá la clave/PIN después de seleccionar el equipo.
+      // Aplicamos filtros por nombre y servicios para forzar el handshake de seguridad
       const device = await (navigator as any).bluetooth.requestDevice({
-        acceptAllDevices: true,
+        filters: [
+          { namePrefix: 'MMI' },
+          { namePrefix: 'Micro' },
+          { namePrefix: 'Emerson' }
+        ],
         optionalServices: [
-          '00001101-0000-1000-8000-00805f9b34fb', // Serial Port (Suele pedir credenciales)
-          '0000ffe0-0000-1000-8000-00805f9b34fb'  // Custom Emerson/MicroMotion
+          '00001101-0000-1000-8000-00805f9b34fb', // Serial Port Service (SPP)
+          '0000180a-0000-1000-8000-00805f9b34fb', // Device Information
+          '0000ffe0-0000-1000-8000-00805f9b34fb'  // Emerson Custom Service
         ]
       });
 
-      setLogBT(prev => [...prev, `📦 Dispositivo seleccionado: ${device.name || 'Desconocido'}`]);
-      setLogBT(prev => [...prev, "🔐 Vinculando... (Introduce usuario/clave si el sistema lo solicita)"]);
+      setLogBT(prev => [...prev, `📦 Dispositivo: ${device.name || 'Sin nombre'}`]);
+      setLogBT(prev => [...prev, "🔐 Solicitando conexión segura..."]);
 
+      // Al conectar al servidor GATT, el navegador debería pedir el PIN/Clave
       const server = await device.gatt.connect();
+      
       setBtStatus('CONNECTED');
-      setLogBT(prev => [...prev, "✅ CONEXIÓN ESTABLECIDA"]);
+      setLogBT(prev => [...prev, "✅ CONEXIÓN EXITOSA CON EL EQUIPO"]);
 
-      // Intentamos descubrir los servicios para identificar dónde están los 4 datos
+      // Intentamos listar los servicios disponibles para identificar la trama de datos
       const services = await server.getPrimaryServices();
-      setLogBT(prev => [...prev, `📊 Se detectaron ${services.length} servicios disponibles.`]);
+      setLogBT(prev => [...prev, `📊 Servicios detectados: ${services.length}`]);
+      
+      services.forEach((s: any) => {
+        setLogBT(prev => [...prev, `-> UUID: ${s.uuid}`]);
+      });
 
       device.addEventListener('gattserverdisconnected', () => {
         setBtStatus('IDLE');
-        setLogBT(prev => [...prev, "⚠️ Dispositivo desconectado."]);
+        setLogBT(prev => [...prev, "⚠️ Conexión terminada por el dispositivo."]);
       });
 
     } catch (error: any) {
       console.error(error);
       setBtStatus('ERROR');
       setLogBT(prev => [...prev, `❌ ERROR: ${error.message}`]);
+      if (error.message.includes("User cancelled")) {
+        setLogBT(prev => [...prev, "Tip: El usuario canceló la selección."]);
+      }
     }
   };
 
@@ -108,36 +121,38 @@ export default function GestionEquipos() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
+    <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-900">
       <div className="max-w-6xl mx-auto space-y-8">
         
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center bg-white p-6 rounded-[30px] shadow-sm border border-slate-100">
           <div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Gestión de Equipos</h1>
-            <p className="text-slate-500 font-medium">Configuración y Test de Comunicación BT</p>
+            <h1 className="text-3xl font-black tracking-tighter uppercase">Gestión de Equipos</h1>
+            <p className="text-slate-500 font-medium">Configuración de Lectores e Interfaz BT</p>
           </div>
           
-          {/* BOTÓN DE ESCANEO */}
           <button 
             onClick={iniciarEscaneoBT}
-            className={`px-6 py-3 rounded-2xl font-black text-xs transition-all shadow-lg flex items-center gap-2 ${
-              btStatus === 'CONNECTED' ? 'bg-green-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'
+            className={`px-6 py-4 rounded-2xl font-black text-xs transition-all shadow-xl flex items-center gap-2 ${
+              btStatus === 'CONNECTED' ? 'bg-emerald-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            {btStatus === 'SCANNING' ? 'BUSCANDO...' : '⚡ ESCANEAR BLUETOOTH'}
+            {btStatus === 'SCANNING' ? 'BUSCANDO...' : '⚡ ESCANEAR VISOR BT'}
           </button>
         </div>
 
-        {/* CONSOLA DE LOGS BLUETOOTH */}
+        {/* CONSOLA DE LOGS */}
         {(btStatus !== 'IDLE' || logBT.length > 0) && (
-          <div className="bg-slate-900 rounded-2xl p-4 font-mono text-[10px] text-blue-300 shadow-2xl border-4 border-slate-800">
-            <div className="flex justify-between border-b border-slate-700 pb-2 mb-2">
-              <span className="text-slate-500">BT_DEBUG_CONSOLE_V1</span>
-              <button onClick={() => {setLogBT([]); setBtStatus('IDLE');}} className="text-red-400 hover:text-red-300">LIMPIAR</button>
+          <div className="bg-slate-900 rounded-3xl p-5 font-mono text-[11px] text-blue-300 shadow-2xl border-4 border-slate-800">
+            <div className="flex justify-between border-b border-slate-700 pb-3 mb-3">
+              <span className="text-slate-500 font-bold uppercase">BT_Status_Monitor</span>
+              <button onClick={() => {setLogBT([]); setBtStatus('IDLE');}} className="text-rose-400 hover:text-rose-300 font-bold">CERRAR</button>
             </div>
-            <div className="h-32 overflow-y-auto space-y-1">
+            <div className="h-40 overflow-y-auto space-y-1 scrollbar-hide">
               {logBT.map((line, i) => (
-                <div key={i}>{`> ${line}`}</div>
+                <div key={i} className="flex gap-2">
+                  <span className="text-slate-600">[{new Date().toLocaleTimeString()}]</span>
+                  <span>{`> ${line}`}</span>
+                </div>
               ))}
             </div>
           </div>
@@ -161,37 +176,37 @@ export default function GestionEquipos() {
         </div>
 
         {/* TABLA DE EQUIPOS */}
-        <div className="bg-white rounded-[35px] shadow-xl border border-slate-100 overflow-hidden">
+        <div className="bg-white rounded-[40px] shadow-xl border border-slate-100 overflow-hidden">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Referencia</th>
-                <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Tag ID</th>
-                <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Nombre</th>
-                <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Sección</th>
-                <th className="p-4 text-center text-[10px] font-black text-slate-400 uppercase">Acciones</th>
+              <tr className="bg-slate-50/50 border-b border-slate-100">
+                <th className="p-5 text-[10px] font-black text-slate-400 uppercase">Referencia</th>
+                <th className="p-5 text-[10px] font-black text-slate-400 uppercase">Tag ID</th>
+                <th className="p-5 text-[10px] font-black text-slate-400 uppercase">Nombre</th>
+                <th className="p-5 text-[10px] font-black text-slate-400 uppercase">Sección</th>
+                <th className="p-5 text-center text-[10px] font-black text-slate-400 uppercase">Acciones</th>
               </tr>
             </thead>
-            <tbody className="text-xs font-medium text-slate-700">
+            <tbody className="text-xs font-medium">
               {equipos.map((eq) => (
-                <tr key={eq.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                <tr key={eq.id} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
                   <td className="p-4">
                     {eq.foto_url ? (
                       <div className="relative group">
-                        <img src={eq.foto_url} className="w-12 h-12 rounded-xl object-cover shadow-md group-hover:scale-110 transition-transform" />
+                        <img src={eq.foto_url} className="w-14 h-14 rounded-2xl object-cover shadow-md group-hover:scale-110 transition-transform duration-300" />
                         {editandoId === eq.id && (
-                          <label className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center cursor-pointer">
-                            <span className="text-[8px] text-white">🔄</span>
+                          <label className="absolute inset-0 bg-black/40 rounded-2xl flex items-center justify-center cursor-pointer">
+                            <span className="text-[10px] text-white">🔄</span>
                             <input type="file" hidden onChange={(e) => handleFileUpload(e, true)} />
                           </label>
                         )}
                       </div>
-                    ) : <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-slate-300">N/A</div>}
+                    ) : <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-300">N/A</div>}
                   </td>
                   <td className="p-4">
                     {editandoId === eq.id ? (
                       <input className="border-b-2 border-blue-500 outline-none w-full bg-transparent p-1 font-bold" value={tempEdit.tag_id} onChange={e => setTempEdit({...tempEdit, tag_id: e.target.value})} />
-                    ) : <span className="font-black text-slate-900">{eq.tag_id}</span>}
+                    ) : <span className="font-black text-slate-900 text-sm">{eq.tag_id}</span>}
                   </td>
                   <td className="p-4">
                     {editandoId === eq.id ? (
@@ -204,19 +219,19 @@ export default function GestionEquipos() {
                         <option value="REFINERIA">REFINERÍA</option>
                         <option value="EXTRACTORA">EXTRACTORA</option>
                       </select>
-                    ) : <span className="bg-slate-100 px-3 py-1 rounded-full text-[9px] font-black uppercase">{eq.seccion}</span>}
+                    ) : <span className="bg-slate-100 px-4 py-1 rounded-full text-[9px] font-black uppercase text-slate-600">{eq.seccion}</span>}
                   </td>
                   <td className="p-4 text-center">
-                    <div className="flex justify-center gap-3 text-lg">
+                    <div className="flex justify-center gap-4 text-xl">
                       {editandoId === eq.id ? (
                         <>
-                          <button onClick={actualizarEquipo} className="text-green-600">💾</button>
-                          <button onClick={() => setEditandoId(null)} className="text-gray-400">❌</button>
+                          <button onClick={actualizarEquipo} className="text-emerald-600">💾</button>
+                          <button onClick={() => setEditandoId(null)} className="text-slate-400">❌</button>
                         </>
                       ) : (
                         <>
-                          <button onClick={() => { setEditandoId(eq.id); setTempEdit(eq); }} className="text-blue-500 hover:scale-110 transition-transform">✏️</button>
-                          <button onClick={async () => { if(confirm(`¿Eliminar ${eq.tag_id}?`)) { await supabase.from('cat_equipos').delete().eq('id', eq.id); cargarEquipos(); } }} className="text-red-400 hover:scale-110 transition-transform">🗑️</button>
+                          <button onClick={() => { setEditandoId(eq.id); setTempEdit(eq); }} className="text-blue-500 hover:scale-125 transition-transform">✏️</button>
+                          <button onClick={async () => { if(confirm(`¿Eliminar ${eq.tag_id}?`)) { await supabase.from('cat_equipos').delete().eq('id', eq.id); cargarEquipos(); } }} className="text-rose-400 hover:scale-125 transition-transform">🗑️</button>
                         </>
                       )}
                     </div>
