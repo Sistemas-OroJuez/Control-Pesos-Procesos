@@ -140,7 +140,7 @@ export default function ReporteFinalAuditoria() {
                   <option value="TODOS">TODAS</option>
                   <option value="ENTRADA_ACP">ENTRADA_ACP</option>
                   <option value="SALIDA_RBD">SALIDA_RBD</option>
-                  <option value="PRODUCCION_AGL">PRODUCCION_AGL</option>
+                  <option value="PRODUCCION_AGL">ACIDO_GRASO</option>
                 </select>
               </div>
             </>
