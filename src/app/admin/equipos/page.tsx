@@ -7,6 +7,10 @@ export default function GestionEquipos() {
   const [loading, setLoading] = useState(false);
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [tempEdit, setTempEdit] = useState<any>(null);
+
+  // --- ESTADOS PARA PRUEBAS BLUETOOTH ---
+  const [btStatus, setBtStatus] = useState<'IDLE' | 'SCANNING' | 'CONNECTED' | 'ERROR'>('IDLE');
+  const [logBT, setLogBT] = useState<string[]>([]);
   
   const [nuevo, setNuevo] = useState({ 
     tag_id: '', 
@@ -22,6 +26,45 @@ export default function GestionEquipos() {
   const cargarEquipos = async () => {
     const { data } = await supabase.from('cat_equipos').select('*').order('created_at', { ascending: false });
     if (data) setEquipos(data);
+  };
+
+  // --- FUNCIÓN DE ESCANEO Y CONEXIÓN BT ---
+  const iniciarEscaneoBT = async () => {
+    setBtStatus('SCANNING');
+    setLogBT(["Iniciando búsqueda de Micro Motion..."]);
+
+    try {
+      // Solicitamos el dispositivo. 
+      // Nota: El navegador pedirá la clave/PIN después de seleccionar el equipo.
+      const device = await (navigator as any).bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [
+          '00001101-0000-1000-8000-00805f9b34fb', // Serial Port (Suele pedir credenciales)
+          '0000ffe0-0000-1000-8000-00805f9b34fb'  // Custom Emerson/MicroMotion
+        ]
+      });
+
+      setLogBT(prev => [...prev, `📦 Dispositivo seleccionado: ${device.name || 'Desconocido'}`]);
+      setLogBT(prev => [...prev, "🔐 Vinculando... (Introduce usuario/clave si el sistema lo solicita)"]);
+
+      const server = await device.gatt.connect();
+      setBtStatus('CONNECTED');
+      setLogBT(prev => [...prev, "✅ CONEXIÓN ESTABLECIDA"]);
+
+      // Intentamos descubrir los servicios para identificar dónde están los 4 datos
+      const services = await server.getPrimaryServices();
+      setLogBT(prev => [...prev, `📊 Se detectaron ${services.length} servicios disponibles.`]);
+
+      device.addEventListener('gattserverdisconnected', () => {
+        setBtStatus('IDLE');
+        setLogBT(prev => [...prev, "⚠️ Dispositivo desconectado."]);
+      });
+
+    } catch (error: any) {
+      console.error(error);
+      setBtStatus('ERROR');
+      setLogBT(prev => [...prev, `❌ ERROR: ${error.message}`]);
+    }
   };
 
   const handleFileUpload = async (e: any, isEdit: boolean = false) => {
@@ -41,153 +84,139 @@ export default function GestionEquipos() {
       alert("Error al subir foto");
     } else {
       const { data } = supabase.storage.from('evidencias').getPublicUrl(filePath);
-      if (isEdit) {
-        setTempEdit({ ...tempEdit, foto_url: data.publicUrl });
-      } else {
-        setNuevo({ ...nuevo, foto_url: data.publicUrl });
-      }
-      alert("Foto cargada correctamente");
+      if (isEdit) setTempEdit({ ...tempEdit, foto_url: data.publicUrl });
+      else setNuevo({ ...nuevo, foto_url: data.publicUrl });
     }
     setLoading(false);
   };
 
-  const guardarNuevo = async () => {
-    if (!nuevo.tag_id || !nuevo.nombre) return alert("Completa los campos obligatorios");
-    setLoading(true);
+  const agregarEquipo = async () => {
+    if (!nuevo.tag_id || !nuevo.nombre) return alert("Completa los campos");
     const { error } = await supabase.from('cat_equipos').insert([nuevo]);
     if (!error) {
       setNuevo({ tag_id: '', nombre: '', seccion: 'REFINERIA', foto_url: '' });
       cargarEquipos();
     }
-    setLoading(false);
   };
 
   const actualizarEquipo = async () => {
-    setLoading(true);
-    const { error } = await supabase
-      .from('cat_equipos')
-      .update({
-        tag_id: tempEdit.tag_id,
-        nombre: tempEdit.nombre,
-        seccion: tempEdit.seccion,
-        foto_url: tempEdit.foto_url
-      })
-      .eq('id', tempEdit.id);
-
+    const { error } = await supabase.from('cat_equipos').update(tempEdit).eq('id', editandoId);
     if (!error) {
       setEditandoId(null);
       cargarEquipos();
-      alert("Equipo actualizado");
     }
-    setLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
-      <div className="max-w-6xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-3xl font-black uppercase italic border-b-4 border-blue-600 inline-block text-slate-800">
-            Configuración de Lectores IDs
-          </h1>
-        </header>
+    <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
+      <div className="max-w-6xl mx-auto space-y-8">
+        
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">Gestión de Equipos</h1>
+            <p className="text-slate-500 font-medium">Configuración y Test de Comunicación BT</p>
+          </div>
+          
+          {/* BOTÓN DE ESCANEO */}
+          <button 
+            onClick={iniciarEscaneoBT}
+            className={`px-6 py-3 rounded-2xl font-black text-xs transition-all shadow-lg flex items-center gap-2 ${
+              btStatus === 'CONNECTED' ? 'bg-green-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+          >
+            {btStatus === 'SCANNING' ? 'BUSCANDO...' : '⚡ ESCANEAR BLUETOOTH'}
+          </button>
+        </div>
 
-        {/* Formulario de Registro */}
-        <div className="bg-white p-6 rounded-3xl shadow-xl mb-8 border-2 border-slate-900">
-          <h2 className="text-xs font-black text-blue-600 mb-6 uppercase tracking-tighter">Registrar Nuevo Dispositivo</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <input 
-                placeholder="TAG ID (Ej: EH_8KBB_XB05A1)" 
-                className="w-full p-3 border-2 rounded-xl font-mono text-blue-600 uppercase outline-none"
-                value={nuevo.tag_id}
-                onChange={(e) => setNuevo({...nuevo, tag_id: e.target.value.toUpperCase()})}
-              />
-              <input 
-                placeholder="Nombre descriptivo" 
-                className="w-full p-3 border-2 rounded-xl outline-none"
-                value={nuevo.nombre}
-                onChange={(e) => setNuevo({...nuevo, nombre: e.target.value})}
-              />
-              <select 
-                className="w-full p-3 border-2 rounded-xl font-bold bg-gray-50 outline-none"
-                value={nuevo.seccion}
-                onChange={(e) => setNuevo({...nuevo, seccion: e.target.value})}
-              >
-                <option value="REFINERIA">REFINERÍA</option>
-                <option value="EXTRACTORA">EXTRACTORA</option>
-              </select>
+        {/* CONSOLA DE LOGS BLUETOOTH */}
+        {(btStatus !== 'IDLE' || logBT.length > 0) && (
+          <div className="bg-slate-900 rounded-2xl p-4 font-mono text-[10px] text-blue-300 shadow-2xl border-4 border-slate-800">
+            <div className="flex justify-between border-b border-slate-700 pb-2 mb-2">
+              <span className="text-slate-500">BT_DEBUG_CONSOLE_V1</span>
+              <button onClick={() => {setLogBT([]); setBtStatus('IDLE');}} className="text-red-400 hover:text-red-300">LIMPIAR</button>
             </div>
+            <div className="h-32 overflow-y-auto space-y-1">
+              {logBT.map((line, i) => (
+                <div key={i}>{`> ${line}`}</div>
+              ))}
+            </div>
+          </div>
+        )}
 
-            <div className="flex flex-col space-y-4">
-              <div className="flex-1 border-dashed border-4 border-gray-200 rounded-2xl flex flex-col items-center justify-center p-4 bg-gray-50 relative overflow-hidden min-h-[150px]">
-                {nuevo.foto_url ? (
-                  <img src={nuevo.foto_url} alt="Referencia" className="h-full w-full object-cover rounded-xl" />
-                ) : (
-                  <div className="text-center"><span className="text-4xl">📸</span><p className="text-[9px] font-black text-gray-400 uppercase">Foto de referencia</p></div>
-                )}
-                <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileUpload(e)} className="absolute inset-0 opacity-0 cursor-pointer" />
-              </div>
-              <button onClick={guardarNuevo} disabled={loading} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black uppercase shadow-lg disabled:bg-gray-300">
-                {loading ? 'Guardando...' : 'Guardar Lector'}
-              </button>
-            </div>
+        {/* FORMULARIO AGREGAR */}
+        <div className="grid md:grid-cols-4 gap-4 bg-white p-6 rounded-[30px] shadow-sm border border-slate-200">
+          <input type="text" placeholder="TAG ID (ej. CPO-01)" className="p-3 bg-slate-50 rounded-xl border-none text-xs font-bold" value={nuevo.tag_id} onChange={e => setNuevo({...nuevo, tag_id: e.target.value})} />
+          <input type="text" placeholder="NOMBRE DEL EQUIPO" className="p-3 bg-slate-50 rounded-xl border-none text-xs font-bold" value={nuevo.nombre} onChange={e => setNuevo({...nuevo, nombre: e.target.value})} />
+          <select className="p-3 bg-slate-50 rounded-xl border-none text-xs font-bold uppercase" value={nuevo.seccion} onChange={e => setNuevo({...nuevo, seccion: e.target.value})}>
+            <option value="REFINERIA">REFINERÍA</option>
+            <option value="EXTRACTORA">EXTRACTORA</option>
+          </select>
+          <div className="flex gap-2">
+            <label className="flex-1 bg-slate-100 p-3 rounded-xl text-[10px] font-black text-center cursor-pointer hover:bg-slate-200 transition-colors">
+              {loading ? "..." : "📸 FOTO REF"}
+              <input type="file" hidden onChange={handleFileUpload} />
+            </label>
+            <button onClick={agregarEquipo} className="flex-1 bg-slate-900 text-white p-3 rounded-xl text-[10px] font-black hover:bg-black transition-all">GUARDAR</button>
           </div>
         </div>
 
-        {/* Tabla de Lectores */}
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
-          <table className="w-full text-left">
-            <thead className="bg-slate-900 text-white text-[9px] uppercase tracking-widest text-center">
-              <tr>
-                <th className="p-4">Foto</th>
-                <th className="p-4">Tag ID</th>
-                <th className="p-4">Nombre</th>
-                <th className="p-4">Sección</th>
-                <th className="p-4">Acciones</th>
+        {/* TABLA DE EQUIPOS */}
+        <div className="bg-white rounded-[35px] shadow-xl border border-slate-100 overflow-hidden">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100">
+                <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Referencia</th>
+                <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Tag ID</th>
+                <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Nombre</th>
+                <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Sección</th>
+                <th className="p-4 text-center text-[10px] font-black text-slate-400 uppercase">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y text-sm bg-white">
-              {equipos.map(eq => (
-                <tr key={eq.id} className="hover:bg-blue-50 transition-colors">
-                  <td className="p-4 w-24">
-                    {editandoId === eq.id ? (
-                      <div className="relative h-16 w-16 border-2 border-dashed rounded-lg flex items-center justify-center overflow-hidden">
-                        <img src={tempEdit.foto_url} className="object-cover h-full w-full" />
-                        <input type="file" accept="image/*" capture="environment" onChange={(e) => handleFileUpload(e, true)} className="absolute inset-0 opacity-0" />
+            <tbody className="text-xs font-medium text-slate-700">
+              {equipos.map((eq) => (
+                <tr key={eq.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                  <td className="p-4">
+                    {eq.foto_url ? (
+                      <div className="relative group">
+                        <img src={eq.foto_url} className="w-12 h-12 rounded-xl object-cover shadow-md group-hover:scale-110 transition-transform" />
+                        {editandoId === eq.id && (
+                          <label className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center cursor-pointer">
+                            <span className="text-[8px] text-white">🔄</span>
+                            <input type="file" hidden onChange={(e) => handleFileUpload(e, true)} />
+                          </label>
+                        )}
                       </div>
-                    ) : (
-                      <img src={eq.foto_url} className="h-16 w-16 rounded-lg object-cover border shadow-sm" />
-                    )}
+                    ) : <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-slate-300">N/A</div>}
                   </td>
-                  <td className="p-4 font-mono font-black text-blue-600">
+                  <td className="p-4">
                     {editandoId === eq.id ? (
-                      <input className="border p-2 w-full rounded" value={tempEdit.tag_id} onChange={e => setTempEdit({...tempEdit, tag_id: e.target.value.toUpperCase()})} />
-                    ) : eq.tag_id}
+                      <input className="border-b-2 border-blue-500 outline-none w-full bg-transparent p-1 font-bold" value={tempEdit.tag_id} onChange={e => setTempEdit({...tempEdit, tag_id: e.target.value})} />
+                    ) : <span className="font-black text-slate-900">{eq.tag_id}</span>}
                   </td>
-                  <td className="p-4 font-bold">
+                  <td className="p-4">
                     {editandoId === eq.id ? (
-                      <input className="border p-2 w-full rounded" value={tempEdit.nombre} onChange={e => setTempEdit({...tempEdit, nombre: e.target.value})} />
+                      <input className="border-b-2 border-blue-500 outline-none w-full bg-transparent p-1" value={tempEdit.nombre} onChange={e => setTempEdit({...tempEdit, nombre: e.target.value})} />
                     ) : eq.nombre}
                   </td>
                   <td className="p-4">
                     {editandoId === eq.id ? (
-                      <select className="border p-2 w-full rounded" value={tempEdit.seccion} onChange={e => setTempEdit({...tempEdit, seccion: e.target.value})}>
+                      <select className="border-b-2 border-blue-500 outline-none bg-transparent p-1 w-full" value={tempEdit.seccion} onChange={e => setTempEdit({...tempEdit, seccion: e.target.value})}>
                         <option value="REFINERIA">REFINERÍA</option>
                         <option value="EXTRACTORA">EXTRACTORA</option>
                       </select>
-                    ) : <span className="bg-slate-100 px-3 py-1 rounded-full text-[9px] font-black">{eq.seccion}</span>}
+                    ) : <span className="bg-slate-100 px-3 py-1 rounded-full text-[9px] font-black uppercase">{eq.seccion}</span>}
                   </td>
                   <td className="p-4 text-center">
-                    <div className="flex justify-center gap-3">
+                    <div className="flex justify-center gap-3 text-lg">
                       {editandoId === eq.id ? (
                         <>
-                          <button onClick={actualizarEquipo} className="text-green-600 font-bold">💾</button>
-                          <button onClick={() => setEditandoId(null)} className="text-gray-400 font-bold">❌</button>
+                          <button onClick={actualizarEquipo} className="text-green-600">💾</button>
+                          <button onClick={() => setEditandoId(null)} className="text-gray-400">❌</button>
                         </>
                       ) : (
                         <>
-                          <button onClick={() => { setEditandoId(eq.id); setTempEdit(eq); }} className="text-blue-500 hover:scale-125 transition-transform text-xl">✏️</button>
-                          <button onClick={async () => { if(confirm(`¿Eliminar ${eq.tag_id}?`)) { await supabase.from('cat_equipos').delete().eq('id', eq.id); cargarEquipos(); } }} className="text-red-400 hover:scale-125 transition-transform text-xl">🗑️</button>
+                          <button onClick={() => { setEditandoId(eq.id); setTempEdit(eq); }} className="text-blue-500 hover:scale-110 transition-transform">✏️</button>
+                          <button onClick={async () => { if(confirm(`¿Eliminar ${eq.tag_id}?`)) { await supabase.from('cat_equipos').delete().eq('id', eq.id); cargarEquipos(); } }} className="text-red-400 hover:scale-110 transition-transform">🗑️</button>
                         </>
                       )}
                     </div>
