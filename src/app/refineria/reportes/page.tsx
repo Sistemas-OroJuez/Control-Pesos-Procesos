@@ -50,7 +50,6 @@ export default function ReporteFinalAuditoria() {
     setLoading(false);
   };
 
-  // --- FUNCIONES DE EXPORTACIÓN ---
   const exportarExcel = () => {
     if (registros.length === 0) return alert("No hay datos para exportar");
     const dataExcel = registros.map(r => ({
@@ -68,30 +67,47 @@ export default function ReporteFinalAuditoria() {
   };
 
   const exportarPDF = () => {
-    if (registros.length === 0) return alert("No hay datos para exportar");
-    const doc = new jsPDF();
-    doc.setFontSize(16);
-    doc.text("REPORTE AUDITORIA REFINERIA", 14, 15);
-    doc.setFontSize(10);
-    doc.text(`Periodo: ${fechaInicio} al ${fechaFin}`, 14, 22);
+    if (registros.length === 0) return alert("No hay datos cargados para exportar el PDF");
+    
+    try {
+      const doc = new jsPDF();
+      
+      // Título del Documento
+      doc.setFontSize(18);
+      doc.text("REPORTE AUDITORIA REFINERIA", 14, 15);
+      
+      // Subtítulo con Fechas
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text(`Periodo de Auditoría: ${fechaInicio} hasta ${fechaFin}`, 14, 22);
+      doc.text(`Generado el: ${new Date().toLocaleString()}`, 14, 27);
 
-    const body = registros.map(r => [
-      new Date(r.created_at).toLocaleString(),
-      r.tipo_operacion,
-      r.variedad,
-      r.lecturaAnterior.toLocaleString(),
-      parseFloat(r.valor_lectura).toLocaleString(),
-      r.kgResultantes.toLocaleString()
-    ]);
+      // Preparación de datos para la tabla
+      const tableRows = registros.map(r => [
+        new Date(r.created_at).toLocaleString(),
+        r.tipo_operacion,
+        r.variedad,
+        r.lecturaAnterior.toLocaleString(),
+        parseFloat(r.valor_lectura).toLocaleString(),
+        `${r.kgResultantes.toLocaleString()} KG`
+      ]);
 
-    (doc as any).autoTable({
-      startY: 30,
-      head: [['Fecha', 'Operación', 'Variedad', 'L. Ant', 'L. Act', 'Total KG']],
-      body: body,
-      theme: 'grid',
-      headStyles: { fillColor: [0, 0, 0] }
-    });
-    doc.save(`Auditoria_${fechaInicio}.pdf`);
+      // Generación automática de la tabla
+      (doc as any).autoTable({
+        startY: 35,
+        head: [['Fecha / Hora', 'Operación', 'Variedad', 'Lect. Anterior', 'Lect. Actual', 'Resultado KG']],
+        body: tableRows,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 3 },
+        headStyles: { fillColor: [20, 20, 20], textColor: [255, 255, 255], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [245, 245, 245] },
+      });
+
+      doc.save(`Reporte_Auditoria_${fechaInicio}.pdf`);
+    } catch (err) {
+      console.error("Error generando PDF:", err);
+      alert("Hubo un error al generar el archivo PDF.");
+    }
   };
 
   const enviarWhatsAppSinNumero = () => {
@@ -169,8 +185,8 @@ export default function ReporteFinalAuditoria() {
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <h1 className="text-3xl font-black italic tracking-tighter">Auditoría Refinería</h1>
             <div className="flex flex-wrap gap-3 justify-center">
-              {/* BOTONES VINCULADOS */}
               <button onClick={exportarExcel} className="bg-emerald-600 px-6 py-2 rounded-xl font-black hover:bg-emerald-700 transition-all">📊 EXCEL</button>
+              {/* Botón de PDF con la función exportarPDF */}
               <button onClick={exportarPDF} className="bg-red-600 px-6 py-2 rounded-xl font-black hover:bg-red-700 transition-all">📕 PDF</button>
               <button onClick={enviarWhatsAppSinNumero} className="bg-green-500 text-black px-6 py-2 rounded-xl font-black hover:bg-green-400 transition-all flex items-center gap-2">
                 <span className="text-lg">📲</span> ENVIAR A WHATSAPP
