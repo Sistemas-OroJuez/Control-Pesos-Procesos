@@ -32,7 +32,6 @@ export default function ReporteFinalAuditoria() {
         const lecturaActual = parseFloat(reg.valor_lectura) || 0;
         const lecturaAnterior = anterior ? parseFloat(anterior.valor_lectura) : lecturaActual;
         
-        // Lógica de cálculo incluyendo SALIDA_RBD
         const kg = (reg.tipo_operacion === 'ENTRADA_ACP' || reg.tipo_operacion === 'SALIDA_RBD') 
           ? (lecturaActual - lecturaAnterior) 
           : lecturaActual;
@@ -51,20 +50,60 @@ export default function ReporteFinalAuditoria() {
     setLoading(false);
   };
 
+  // --- FUNCIONES DE EXPORTACIÓN ---
+  const exportarExcel = () => {
+    if (registros.length === 0) return alert("No hay datos para exportar");
+    const dataExcel = registros.map(r => ({
+      Fecha: new Date(r.created_at).toLocaleString(),
+      Operacion: r.tipo_operacion,
+      Variedad: r.variedad,
+      'Lectura Ant.': r.lecturaAnterior,
+      'Lectura Act.': r.valor_lectura,
+      'Resultado KG': r.kgResultantes
+    }));
+    const ws = XLSX.utils.json_to_sheet(dataExcel);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Auditoria");
+    XLSX.writeFile(wb, `Reporte_Auditoria_${fechaInicio}_al_${fechaFin}.xlsx`);
+  };
+
+  const exportarPDF = () => {
+    if (registros.length === 0) return alert("No hay datos para exportar");
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text("REPORTE AUDITORIA REFINERIA", 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Periodo: ${fechaInicio} al ${fechaFin}`, 14, 22);
+
+    const body = registros.map(r => [
+      new Date(r.created_at).toLocaleString(),
+      r.tipo_operacion,
+      r.variedad,
+      r.lecturaAnterior.toLocaleString(),
+      parseFloat(r.valor_lectura).toLocaleString(),
+      r.kgResultantes.toLocaleString()
+    ]);
+
+    (doc as any).autoTable({
+      startY: 30,
+      head: [['Fecha', 'Operación', 'Variedad', 'L. Ant', 'L. Act', 'Total KG']],
+      body: body,
+      theme: 'grid',
+      headStyles: { fillColor: [0, 0, 0] }
+    });
+    doc.save(`Auditoria_${fechaInicio}.pdf`);
+  };
+
   const enviarWhatsAppSinNumero = () => {
     if (registros.length === 0) return alert("No hay datos para enviar");
-
     let mensaje = `*REPORTE AUDITORIA REFINERIA*\n`;
     mensaje += `*Periodo:* ${fechaInicio} a ${fechaFin}\n\n`;
-    
     registros.forEach(r => {
       mensaje += `🔹 *${r.tipo_operacion}* | ${r.variedad}\n`;
       mensaje += `L. Act: ${parseFloat(r.valor_lectura).toLocaleString()} - L. Ant: ${r.lecturaAnterior.toLocaleString()}\n`;
       mensaje += `*DIF: ${r.kgResultantes.toLocaleString()} KG*\n`;
       mensaje += `----------------------------\n`;
     });
-
-    // Al no incluir número después de /send, WhatsApp abre el selector de contactos
     const url = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
   };
@@ -100,7 +139,7 @@ export default function ReporteFinalAuditoria() {
                         <td className="p-4 text-zinc-500">{new Date(r.created_at).toLocaleString()}</td>
                         <td className="p-4 text-center">
                           {r.foto_url && (
-                            <button onClick={() => window.open(r.foto_url, '_blank')} className="bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full border border-blue-500/30 text-[9px] font-bold hover:bg-blue-600 hover:text-white">👁️ VER FOTO</button>
+                            <button onClick={() => window.open(r.foto_url, '_blank')} className="bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full border border-blue-500/30 text-[9px] font-bold hover:bg-blue-600 hover:text-white transition-all">👁️ VER FOTO</button>
                           )}
                         </td>
                         <td className="p-4 text-right">{r.lecturaAnterior?.toLocaleString()}</td>
@@ -126,18 +165,14 @@ export default function ReporteFinalAuditoria() {
     <div className="min-h-screen bg-black p-4 md:p-8 font-sans text-white uppercase text-[10px]">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* HEADER Y ACCIONES */}
         <div className="bg-zinc-900 p-8 rounded-[40px] border border-white/10 space-y-6 shadow-2xl">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <h1 className="text-3xl font-black italic tracking-tighter">Auditoría Refinería</h1>
             <div className="flex flex-wrap gap-3 justify-center">
-              <button className="bg-emerald-600 px-6 py-2 rounded-xl font-black hover:bg-emerald-700 transition-all">📊 EXCEL</button>
-              <button className="bg-red-600 px-6 py-2 rounded-xl font-black hover:bg-red-700 transition-all">📕 PDF</button>
-              {/* Botón de WhatsApp directo al selector de contactos */}
-              <button 
-                onClick={enviarWhatsAppSinNumero} 
-                className="bg-green-500 text-black px-6 py-2 rounded-xl font-black hover:bg-green-400 transition-all flex items-center gap-2"
-              >
+              {/* BOTONES VINCULADOS */}
+              <button onClick={exportarExcel} className="bg-emerald-600 px-6 py-2 rounded-xl font-black hover:bg-emerald-700 transition-all">📊 EXCEL</button>
+              <button onClick={exportarPDF} className="bg-red-600 px-6 py-2 rounded-xl font-black hover:bg-red-700 transition-all">📕 PDF</button>
+              <button onClick={enviarWhatsAppSinNumero} className="bg-green-500 text-black px-6 py-2 rounded-xl font-black hover:bg-green-400 transition-all flex items-center gap-2">
                 <span className="text-lg">📲</span> ENVIAR A WHATSAPP
               </button>
             </div>
@@ -147,7 +182,6 @@ export default function ReporteFinalAuditoria() {
           </div>
         </div>
 
-        {/* FILTROS CON OPCIÓN SALIDA_RBD */}
         <div className="bg-zinc-900 p-6 rounded-[30px] border border-white/10 grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="flex flex-col gap-1">
             <span className="text-zinc-600 font-bold ml-2">FECHA INICIO</span>
