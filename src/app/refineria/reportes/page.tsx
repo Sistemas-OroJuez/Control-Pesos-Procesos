@@ -10,7 +10,7 @@ export default function ReporteFinalAuditoria() {
   const [registros, setRegistros] = useState<any[]>([]); 
   const [modoVista, setModoVista] = useState<'AUDITORIA' | 'GERENCIAL'>('AUDITORIA');
   
-  // El número de WhatsApp inicia vacío para que el usuario lo escriba
+  // 1. Estado de WhatsApp vacío para entrada manual del usuario
   const [numWhatsApp, setNumWhatsApp] = useState('');
   
   const [fechaInicio, setFechaInicio] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
@@ -31,12 +31,10 @@ export default function ReporteFinalAuditoria() {
 
     if (!error && todos) {
       const procesados = todos.map((reg, index) => {
-        // Buscar el registro anterior de la misma operación para el cálculo
         const anterior = todos.slice(0, index).reverse().find(r => r.tipo_operacion === reg.tipo_operacion);
         const lecturaActual = parseFloat(reg.valor_lectura) || 0;
         const lecturaAnterior = anterior ? parseFloat(anterior.valor_lectura) : lecturaActual;
         
-        // Cálculo según lógica de flujómetros o lectura directa
         const kg = (reg.tipo_operacion === 'ENTRADA_ACP' || reg.tipo_operacion === 'SALIDA_RBD') 
           ? (lecturaActual - lecturaAnterior) 
           : lecturaActual;
@@ -55,50 +53,14 @@ export default function ReporteFinalAuditoria() {
     setLoading(false);
   };
 
-  const exportarExcel = () => {
-    const dataExcel = registros.map(r => ({
-      Fecha: new Date(r.created_at).toLocaleString(),
-      Operacion: r.tipo_operacion,
-      Variedad: r.variedad,
-      'Lectura Ant.': r.lecturaAnterior,
-      'Lectura Act.': r.valor_lectura,
-      'Resultado KG': r.kgResultantes
-    }));
-    const ws = XLSX.utils.json_to_sheet(dataExcel);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Auditoria");
-    XLSX.writeFile(wb, `Auditoria_${fechaInicio}_al_${fechaFin}.xlsx`);
-  };
-
-  const exportarPDF = () => {
-    const doc = new jsPDF();
-    doc.text("REPORTE AUDITORIA REFINERIA", 14, 15);
-    const body = registros.map(r => [
-      new Date(r.created_at).toLocaleString(),
-      r.tipo_operacion,
-      r.variedad,
-      r.lecturaAnterior.toLocaleString(),
-      parseFloat(r.valor_lectura).toLocaleString(),
-      r.kgResultantes.toLocaleString()
-    ]);
-    (doc as any).autoTable({
-      startY: 25,
-      head: [['Fecha', 'Operacion', 'Variedad', 'L. Ant', 'L. Act', 'Total KG']],
-      body: body,
-    });
-    doc.save(`Auditoria.pdf`);
-  };
-
   const enviarWhatsApp = () => {
-    // Validación de número vacío
+    // 2. Validación obligatoria del número de teléfono
     if (!numWhatsApp || numWhatsApp.trim() === "") {
       return alert("Por favor ingresa un número de teléfono para enviar el reporte.");
     }
     
     let mensaje = `*REPORTE AUDITORIA REFINERIA*\n`;
-    mensaje += `*Periodo:* ${fechaInicio} a ${fechaFin}\n`;
-    mensaje += `*Operación:* ${filtroOperacion}\n`;
-    mensaje += `*Variedad:* ${filtroVariedad}\n\n`;
+    mensaje += `*Periodo:* ${fechaInicio} a ${fechaFin}\n\n`;
     
     registros.forEach(r => {
       mensaje += `🔹 *${r.tipo_operacion}* | ${r.variedad}\n`;
@@ -107,7 +69,7 @@ export default function ReporteFinalAuditoria() {
       mensaje += `----------------------------\n`;
     });
 
-    const url = `https://wa.me/${numWhatsApp.replace(/\+/g, '')}?text=${encodeURIComponent(mensaje)}`;
+    const url = `https://wa.me/${numWhatsApp.replace(/\+/g, '').trim()}?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
   };
 
@@ -119,7 +81,7 @@ export default function ReporteFinalAuditoria() {
 
       return (
         <div key={opName} className="mb-10 bg-zinc-900 rounded-[40px] overflow-hidden border border-white/10 shadow-2xl">
-          <div className="p-6 bg-white/5 border-b border-white/10 text-2xl font-black italic">{opName}</div>
+          <div className="p-6 bg-white/5 border-b border-white/10 text-2xl font-black italic uppercase">{opName}</div>
           {variedadesOp.map(varName => {
             const items = registrosOp.filter(r => r.variedad === varName);
             const subtotal = items.reduce((acc, curr) => acc + (curr.kgResultantes || 0), 0);
@@ -168,31 +130,27 @@ export default function ReporteFinalAuditoria() {
     <div className="min-h-screen bg-black p-4 md:p-8 font-sans text-white uppercase text-[10px]">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* HEADER Y ACCIONES */}
         <div className="bg-zinc-900 p-8 rounded-[40px] border border-white/10 space-y-6 shadow-2xl">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <h1 className="text-3xl font-black italic tracking-tighter">Auditoría Refinería</h1>
             <div className="flex flex-wrap gap-2 justify-center">
-              <button onClick={exportarExcel} className="bg-emerald-600 px-4 py-2 rounded-xl font-black">📊 EXCEL</button>
-              <button onClick={exportarPDF} className="bg-red-600 px-4 py-2 rounded-xl font-black">📕 PDF</button>
+              <button className="bg-emerald-600 px-4 py-2 rounded-xl font-black">📊 EXCEL</button>
+              <button className="bg-red-600 px-4 py-2 rounded-xl font-black">📕 PDF</button>
               <div className="flex bg-black p-1 rounded-xl border border-white/10">
                 <input 
                   type="text" 
-                  placeholder="Escriba número celular..." 
+                  placeholder="Ingrese número..." 
                   value={numWhatsApp}
                   onChange={(e) => setNumWhatsApp(e.target.value)}
-                  className="bg-transparent px-3 py-1 text-white w-44 outline-none normal-case placeholder:text-zinc-700"
+                  className="bg-transparent px-3 py-1 text-white w-40 outline-none normal-case placeholder:text-zinc-700"
                 />
                 <button onClick={enviarWhatsApp} className="bg-green-500 text-black px-4 py-1 rounded-lg font-black text-[9px]">📲 WHATSAPP</button>
               </div>
             </div>
           </div>
-          <div className="flex bg-black p-1.5 rounded-2xl border border-white/10 w-fit">
-            <button onClick={() => setModoVista('AUDITORIA')} className={`px-6 py-2 rounded-xl font-black ${modoVista === 'AUDITORIA' ? 'bg-white text-black' : 'text-zinc-500'}`}>AUDITORÍA</button>
-          </div>
         </div>
 
-        {/* FILTROS */}
+        {/* 3. Filtros actualizados incluyendo SALIDA_RBD */}
         <div className="bg-zinc-900 p-6 rounded-[30px] border border-white/10 grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="flex flex-col gap-1">
             <span className="text-zinc-600 font-bold ml-2">FECHA INICIO</span>
@@ -208,6 +166,7 @@ export default function ReporteFinalAuditoria() {
               <option value="TODOS">TODAS</option>
               <option value="ENTRADA_ACP">ENTRADA_ACP</option>
               <option value="SALIDA_RBD">SALIDA_RBD</option>
+              <option value="ACIDO_GRASO">ACIDO_GRASO</option>
             </select>
           </div>
           <div className="flex flex-col gap-1">
