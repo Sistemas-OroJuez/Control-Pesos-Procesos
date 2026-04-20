@@ -10,9 +10,6 @@ export default function ReporteFinalAuditoria() {
   const [registros, setRegistros] = useState<any[]>([]); 
   const [modoVista, setModoVista] = useState<'AUDITORIA' | 'GERENCIAL'>('AUDITORIA');
   
-  // 1. Estado de WhatsApp vacío para entrada manual del usuario
-  const [numWhatsApp, setNumWhatsApp] = useState('');
-  
   const [fechaInicio, setFechaInicio] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
   const [fechaFin, setFechaFin] = useState(new Date().toISOString().split('T')[0]);
   const [filtroVariedad, setFiltroVariedad] = useState('TODOS');
@@ -35,6 +32,7 @@ export default function ReporteFinalAuditoria() {
         const lecturaActual = parseFloat(reg.valor_lectura) || 0;
         const lecturaAnterior = anterior ? parseFloat(anterior.valor_lectura) : lecturaActual;
         
+        // Lógica de cálculo incluyendo SALIDA_RBD
         const kg = (reg.tipo_operacion === 'ENTRADA_ACP' || reg.tipo_operacion === 'SALIDA_RBD') 
           ? (lecturaActual - lecturaAnterior) 
           : lecturaActual;
@@ -53,12 +51,9 @@ export default function ReporteFinalAuditoria() {
     setLoading(false);
   };
 
-  const enviarWhatsApp = () => {
-    // 2. Validación obligatoria del número de teléfono
-    if (!numWhatsApp || numWhatsApp.trim() === "") {
-      return alert("Por favor ingresa un número de teléfono para enviar el reporte.");
-    }
-    
+  const enviarWhatsAppSinNumero = () => {
+    if (registros.length === 0) return alert("No hay datos para enviar");
+
     let mensaje = `*REPORTE AUDITORIA REFINERIA*\n`;
     mensaje += `*Periodo:* ${fechaInicio} a ${fechaFin}\n\n`;
     
@@ -69,7 +64,8 @@ export default function ReporteFinalAuditoria() {
       mensaje += `----------------------------\n`;
     });
 
-    const url = `https://wa.me/${numWhatsApp.replace(/\+/g, '').trim()}?text=${encodeURIComponent(mensaje)}`;
+    // Al no incluir número después de /send, WhatsApp abre el selector de contactos
+    const url = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
   };
 
@@ -87,7 +83,7 @@ export default function ReporteFinalAuditoria() {
             const subtotal = items.reduce((acc, curr) => acc + (curr.kgResultantes || 0), 0);
             return (
               <div key={varName} className="border-b border-white/5 last:border-0">
-                <div className="px-6 py-3 bg-white/5 text-blue-400 font-black text-[10px] tracking-widest uppercase">Variedad: {varName}</div>
+                <div className="px-6 py-3 bg-white/5 text-blue-400 font-black text-[10px] tracking-widest uppercase italic">Variedad: {varName}</div>
                 <table className="w-full text-left">
                   <thead>
                     <tr className="text-[9px] text-zinc-500 uppercase font-bold border-b border-white/5">
@@ -104,7 +100,7 @@ export default function ReporteFinalAuditoria() {
                         <td className="p-4 text-zinc-500">{new Date(r.created_at).toLocaleString()}</td>
                         <td className="p-4 text-center">
                           {r.foto_url && (
-                            <button onClick={() => window.open(r.foto_url, '_blank')} className="bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full border border-blue-500/30 text-[9px] font-bold">👁️ VER FOTO</button>
+                            <button onClick={() => window.open(r.foto_url, '_blank')} className="bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full border border-blue-500/30 text-[9px] font-bold hover:bg-blue-600 hover:text-white">👁️ VER FOTO</button>
                           )}
                         </td>
                         <td className="p-4 text-right">{r.lecturaAnterior?.toLocaleString()}</td>
@@ -130,27 +126,28 @@ export default function ReporteFinalAuditoria() {
     <div className="min-h-screen bg-black p-4 md:p-8 font-sans text-white uppercase text-[10px]">
       <div className="max-w-7xl mx-auto space-y-6">
         
+        {/* HEADER Y ACCIONES */}
         <div className="bg-zinc-900 p-8 rounded-[40px] border border-white/10 space-y-6 shadow-2xl">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <h1 className="text-3xl font-black italic tracking-tighter">Auditoría Refinería</h1>
-            <div className="flex flex-wrap gap-2 justify-center">
-              <button className="bg-emerald-600 px-4 py-2 rounded-xl font-black">📊 EXCEL</button>
-              <button className="bg-red-600 px-4 py-2 rounded-xl font-black">📕 PDF</button>
-              <div className="flex bg-black p-1 rounded-xl border border-white/10">
-                <input 
-                  type="text" 
-                  placeholder="Ingrese número..." 
-                  value={numWhatsApp}
-                  onChange={(e) => setNumWhatsApp(e.target.value)}
-                  className="bg-transparent px-3 py-1 text-white w-40 outline-none normal-case placeholder:text-zinc-700"
-                />
-                <button onClick={enviarWhatsApp} className="bg-green-500 text-black px-4 py-1 rounded-lg font-black text-[9px]">📲 WHATSAPP</button>
-              </div>
+            <div className="flex flex-wrap gap-3 justify-center">
+              <button className="bg-emerald-600 px-6 py-2 rounded-xl font-black hover:bg-emerald-700 transition-all">📊 EXCEL</button>
+              <button className="bg-red-600 px-6 py-2 rounded-xl font-black hover:bg-red-700 transition-all">📕 PDF</button>
+              {/* Botón de WhatsApp directo al selector de contactos */}
+              <button 
+                onClick={enviarWhatsAppSinNumero} 
+                className="bg-green-500 text-black px-6 py-2 rounded-xl font-black hover:bg-green-400 transition-all flex items-center gap-2"
+              >
+                <span className="text-lg">📲</span> ENVIAR A WHATSAPP
+              </button>
             </div>
+          </div>
+          <div className="flex bg-black p-1.5 rounded-2xl border border-white/10 w-fit">
+            <button className="px-6 py-2 rounded-xl font-black bg-white text-black">AUDITORÍA</button>
           </div>
         </div>
 
-        {/* 3. Filtros actualizados incluyendo SALIDA_RBD */}
+        {/* FILTROS CON OPCIÓN SALIDA_RBD */}
         <div className="bg-zinc-900 p-6 rounded-[30px] border border-white/10 grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="flex flex-col gap-1">
             <span className="text-zinc-600 font-bold ml-2">FECHA INICIO</span>
