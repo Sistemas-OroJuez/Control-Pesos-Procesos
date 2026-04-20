@@ -15,244 +15,278 @@ export default function ReporteFinalAuditoria() {
   const [filtroVariedad, setFiltroVariedad] = useState('TODOS');
   const [filtroOperacion, setFiltroOperacion] = useState('TODOS');
 
-  const CLAVE_MAESTRA = "orj2026";
-  const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
-
   useEffect(() => {
     if (modoVista === 'AUDITORIA') fetchAuditoria();
     else fetchBalanceGerencial();
   }, [fechaInicio, fechaFin, modoVista, filtroVariedad, filtroOperacion]);
 
+  // --- FETCH DATA AUDITORIA ---
   const fetchAuditoria = async () => {
     setLoading(true);
-    const { data: todos, error } = await supabase
+    let query = supabase
       .from('operaciones_refineria')
       .select('*')
-      .order('created_at', { ascending: true });
+      .gte('fecha', fechaInicio)
+      .lte('fecha', fechaFin)
+      .order('operacion', { ascending: true })
+      .order('variedad', { ascending: true })
+      .order('fecha', { ascending: false });
 
-    if (!error && todos) {
-      const procesados = todos.map((reg, index) => {
-        const anterior = todos.slice(0, index).reverse().find(r => r.tipo_operacion === reg.tipo_operacion);
-        const lecturaActual = parseFloat(reg.valor_lectura) || 0;
-        const lecturaAnterior = anterior ? parseFloat(anterior.valor_lectura) : lecturaActual;
-        const kg = (reg.tipo_operacion === 'ENTRADA_ACP' || reg.tipo_operacion === 'SALIDA_RBD') ? (lecturaActual - lecturaAnterior) : lecturaActual;
-        return { ...reg, lecturaAnterior, kgResultantes: kg };
-      });
-      
-      setRegistros(procesados.filter(r => {
-        const f = r.created_at.split('T')[0];
-        const cumpleFecha = f >= fechaInicio && f <= fechaFin;
-        const cumpleVariedad = filtroVariedad === 'TODOS' || r.variedad === filtroVariedad;
-        const cumpleOperacion = filtroOperacion === 'TODOS' || r.tipo_operacion === filtroOperacion;
-        return cumpleFecha && cumpleVariedad && cumpleOperacion;
-      }).reverse()); 
-    }
+    if (filtroVariedad !== 'TODOS') query = query.eq('variedad', filtroVariedad);
+    if (filtroOperacion !== 'TODOS') query = query.eq('operacion', filtroOperacion);
+
+    const { data } = await query;
+    setRegistros(data || []);
     setLoading(false);
   };
 
+  // --- FETCH DATA GERENCIAL ---
   const fetchBalanceGerencial = async () => {
     setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('reporte_balance_masa')
-        .select('*')
-        .gte('fecha', fechaInicio)
-        .lte('fecha', fechaFin)
-        .order('fecha', { ascending: false });
-      if (error) throw error;
-      setBalanceData(data || []);
-    } catch (e) { console.error(e); }
+    const { data } = await supabase
+      .from('balance_refineria')
+      .select('*')
+      .gte('fecha3', fechaInicio)
+      .lte('fecha3', fechaFin)
+      .order('fecha3', { ascending: false });
+    setBalanceData(data || []);
     setLoading(false);
   };
 
-  const editarRegistro = async (id: string, valorActual: any) => {
-    const clave = prompt("🔐 INGRESE CLAVE DE AUTORIZACIÓN:");
-    if (clave !== CLAVE_MAESTRA) return alert("❌ CLAVE INCORRECTA");
-    const nuevoValorStr = prompt("📝 CORREGIR VALOR DE LECTURA (OCR):", valorActual);
-    if (nuevoValorStr !== null && nuevoValorStr !== "") {
-      const valorNumerico = parseFloat(nuevoValorStr);
-      if (isNaN(valorNumerico)) return alert("⚠️ INGRESE UN NÚMERO VÁLIDO");
-      setLoading(true);
-      setRegistros(prev => prev.map(r => r.id === id ? { ...r, valor_lectura: valorNumerico } : r));
-      const { data, error } = await supabase.from('operaciones_refineria').update({ valor_lectura: valorNumerico }).eq('id', id).select();
-      if (error) {
-        alert("❌ ERROR EN DB: " + error.message);
-        fetchAuditoria(); 
-      } else {
-        alert("✅ VALOR GUARDADO");
-        setTimeout(() => fetchAuditoria(), 800);
+  // --- LÓGICA ESPECIAL ÁCIDO GRASO ---
+  const calcularKgAcidoGraso = (medidaVacio: number, numTanque: string) => {
+    // Tabla de factores por tanque (Ajustar según necesidad)
+    const factores: { [key: string]: number } = { '1': 0.92, '2': 0.95, 'DEFAULT': 0.90 };
+    const factor = factores[numTanque] || factores['DEFAULT'];
+    return medidaVacio * factor; 
+  };
+
+  // --- WHATSAPP CORREGIDO ---
+  const enviarWhatsApp = (grupo: any[], titulo: string) => {
+    let mensaje = `*REPORTE AUDITORÍA: ${titulo}*\n`;
+    mensaje += `Periodo: ${fechaInicio} al ${fechaFin}\n\n`;
+
+    grupo.forEach(reg => {
+      let resultado = (reg.valor_lectura || 0) - (reg.lectura_anterior || 0);
+      
+      // Si es Ácido Graso, aplicar la fórmula especial en el mensaje también
+      if (reg.operacion === 'ACIDO GRASO') {
+        const kgVacio = calcularKgAcidoGraso(reg.medida_vacio, reg.tanque_id);
+        resultado = (kgVacio + (reg.egreso_produccion || 0) + (reg.egreso_venta || 0)) - (reg.lectura_anterior || 0);
       }
-    }
+
+      mensaje += `📍 *${reg.variedad}* (${reg.fecha})\n`;
+      mensaje += `L.Act: ${reg.valor_lectura.toLocaleString()}\n`;
+      mensaje += `L.Ant: ${reg.lectura_anterior?.toLocaleString() || 0}\n`;
+      mensaje += `Diff: *${resultado.toLocaleString()} Kg*\n`;
+      mensaje += `--------------------------\n`;
+    });
+
+    const url = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
+    window.open(url, '_blank');
   };
 
-  const exportarExcel = () => {
-    const dataExport = modoVista === 'AUDITORIA' ? registros : balanceData;
-    const ws = XLSX.utils.json_to_sheet(dataExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Reporte");
-    XLSX.writeFile(wb, `Reporte_${modoVista}.xlsx`);
-  };
+  // --- RENDER VISTA AUDITORÍA (CON SUBTOTALES) ---
+  const renderTablaAuditoria = () => {
+    const grupos: any = {};
+    registros.forEach(reg => {
+      if (!grupos[reg.operacion]) grupos[reg.operacion] = {};
+      if (!grupos[reg.operacion][reg.variedad]) grupos[reg.operacion][reg.variedad] = [];
+      grupos[reg.operacion][reg.variedad].push(reg);
+    });
 
-  const enviarWhatsApp = () => {
-    if (balanceData.length === 0) return alert("No hay datos para enviar");
-    const tCPO = balanceData.reduce((a, b) => a + (b.total_cpo || 0), 0);
-    const tRBD = balanceData.reduce((a, b) => a + (b.total_rbd || 0), 0);
-    const tAGL = balanceData.reduce((a, b) => a + (b.agl_produccion || 0), 0);
-    const msg = `*📊 RESUMEN GERENCIAL*%0A*ENTRADA CPO:* ${tCPO.toLocaleString()} KG%0A*SALIDA RBD:* ${tRBD.toLocaleString()} KG%0A*PROD AGL:* ${tAGL.toLocaleString()} KG`;
-    window.open(`https://wa.me/?text=${msg}`, '_blank');
-  };
-
-  return (
-    <div className="min-h-screen bg-black text-white p-4 font-sans uppercase text-[10px]">
-      <div className="bg-zinc-900 p-6 rounded-[30px] border border-white/10 mb-6 space-y-6">
-        <div className="flex flex-wrap justify-between items-center gap-4 border-b border-white/5 pb-4">
-          <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-black border border-white/10 px-4 py-2 rounded-xl text-zinc-500 font-black">VOLVER</button>
-          <div className="flex bg-black p-1 rounded-xl border border-white/10">
-            <button onClick={() => setModoVista('AUDITORIA')} className={`px-4 py-2 rounded-lg transition-all ${modoVista === 'AUDITORIA' ? 'bg-orange-600 text-white shadow-lg' : 'text-zinc-600'}`}>VISTA AUDITORÍA</button>
-            <button onClick={() => setModoVista('GERENCIAL')} className={`px-4 py-2 rounded-lg transition-all ${modoVista === 'GERENCIAL' ? 'bg-blue-600 text-white shadow-lg' : 'text-zinc-600'}`}>BALANCE GERENCIAL</button>
-          </div>
+    return Object.keys(grupos).map(op => (
+      <div key={op} className="mb-12 bg-white rounded-[40px] shadow-2xl overflow-hidden border border-slate-200">
+        <div className="bg-slate-900 p-6 flex justify-between items-center">
+          <h2 className="text-2xl font-black text-white uppercase tracking-tighter">OPERACIÓN: {op}</h2>
+          <button 
+            onClick={() => enviarWhatsApp(Object.values(grupos[op]).flat() as any[], op)}
+            className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2 rounded-2xl text-xs font-black transition-all shadow-lg"
+          >
+            📲 WHATSAPP {op}
+          </button>
         </div>
 
-        {/* SECCIÓN DE FILTROS */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-zinc-500 ml-2">INICIO</label>
-            <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white w-full" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-zinc-500 ml-2">FIN</label>
-            <input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white w-full" />
-          </div>
-          
-          {modoVista === 'AUDITORIA' && (
-            <>
-              <div className="flex flex-col gap-1">
-                <label className="text-zinc-500 ml-2">VARIEDAD</label>
-                <select value={filtroVariedad} onChange={e => setFiltroVariedad(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white w-full">
-                  <option value="TODOS">TODOS</option>
-                  <option value="ALTO OLEICO">ALTO OLEICO</option>
-                  <option value="GUINENSIS">GUINENSIS</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-zinc-500 ml-2">OPERACIÓN</label>
-                <select value={filtroOperacion} onChange={e => setFiltroOperacion(e.target.value)} className="bg-black border border-white/10 p-3 rounded-xl text-white w-full">
-                  <option value="TODOS">TODAS</option>
-                  <option value="ENTRADA_ACP">ENTRADA_ACP</option>
-                  <option value="SALIDA_RBD">SALIDA_RBD</option>
-                  <option value="ACIDO_GRASO">ACIDO_GRASO</option>
-                </select>
-              </div>
-            </>
-          )}
+        {Object.keys(grupos[op]).map(varie => {
+          const items = grupos[op][varie];
+          let subtotalLectura = 0;
+          let subtotalDiferencia = 0;
 
-          <div className="flex items-end gap-2 md:col-span-2">
-            <button onClick={exportarExcel} className="flex-1 bg-zinc-800 py-3 rounded-xl font-black hover:bg-zinc-700 transition-all">📊 EXCEL</button>
-            <button onClick={enviarWhatsApp} className="flex-1 bg-emerald-600 py-3 rounded-xl font-black shadow-lg hover:bg-emerald-500 transition-all">💬 WHATSAPP</button>
-          </div>
-        </div>
-      </div>
+          return (
+            <div key={varie} className="border-t border-slate-100">
+              <div className="bg-slate-50 px-8 py-4">
+                <h3 className="text-xl font-black text-blue-600 uppercase">VARIEDAD: {varie}</h3>
+              </div>
+              
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-slate-400 text-[10px] uppercase font-bold border-b border-slate-50">
+                    <th className="p-4 text-left">Fecha</th>
+                    <th className="p-4 text-right">Lectura Actual</th>
+                    <th className="p-4 text-right">Lectura Anterior</th>
+                    <th className="p-4 text-right">Diferencia (Kg)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((r: any) => {
+                    let resultado = (r.valor_lectura || 0) - (r.lectura_anterior || 0);
 
-      <div className="bg-zinc-900 rounded-[35px] border border-white/5 overflow-hidden shadow-2xl min-h-[400px]">
-        {loading ? (
-          <div className="p-20 text-center animate-pulse text-zinc-500 font-black tracking-[0.3em]">PROCESANDO DATOS...</div>
-        ) : modoVista === 'AUDITORIA' ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-white/5 text-zinc-500 border-b border-white/10 font-black">
-                  <th className="p-4">FECHA / HORA</th>
-                  <th className="p-4">OPERACIÓN</th>
-                  <th className="p-4 text-right">L. ANTERIOR</th>
-                  <th className="p-4 text-right text-white">L. ACTUAL</th>
-                  <th className="p-4 text-right text-orange-500">KG RESULTANTES</th>
-                  <th className="p-4 text-center">EVIDENCIA</th>
-                  <th className="p-4 text-center">EDIT</th>
-                </tr>
-              </thead>
-              <tbody>
-                {registros.map((r, i) => (
-                  <tr key={r.id || i} className="border-b border-white/5 hover:bg-white/5 transition-all">
-                    <td className="p-4 text-zinc-500">{new Date(r.created_at).toLocaleString()}</td>
-                    <td className="p-4">
-                      <div className="font-bold">{r.tipo_operacion}</div>
-                      <div className="text-[8px] text-zinc-600">{r.variedad}</div>
-                    </td>
-                    <td className="p-4 text-right text-zinc-600">{r.lecturaAnterior?.toLocaleString()}</td>
-                    <td className="p-4 text-right font-bold bg-white/5">{parseFloat(r.valor_lectura || 0).toLocaleString()}</td>
-                    <td className="p-4 text-right font-black text-orange-400">{r.kgResultantes?.toLocaleString()}</td>
-                    <td className="p-4 text-center">{r.foto_url && <a href={r.foto_url} target="_blank" className="bg-zinc-800 p-2 rounded-lg inline-block">📸</a>}</td>
-                    <td className="p-4 text-center">
-                      <button onClick={() => editarRegistro(r.id, r.valor_lectura)} className="bg-blue-500/10 p-2 rounded-lg text-blue-500 hover:bg-blue-500 shadow-md">✏️</button>
+                    if (op === 'ACIDO GRASO') {
+                      const kgVacio = calcularKgAcidoGraso(r.medida_vacio, r.tanque_id);
+                      resultado = (kgVacio + (r.egreso_produccion || 0) + (r.egreso_venta || 0)) - (r.lectura_anterior || 0);
+                    }
+
+                    subtotalLectura += r.valor_lectura;
+                    subtotalDiferencia += resultado;
+
+                    return (
+                      <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50">
+                        <td className="p-4 font-medium text-slate-500">{r.fecha}</td>
+                        <td className="p-4 text-right font-bold">{r.valor_lectura.toLocaleString()}</td>
+                        <td className="p-4 text-right text-slate-400">{r.lectura_anterior?.toLocaleString() || 0}</td>
+                        <td className="p-4 text-right font-black text-slate-900">{resultado.toLocaleString()}</td>
+                      </tr>
+                    );
+                  })}
+                  {/* FILA DE SUBTOTAL REQUERIDA: GRANDE Y VISIBLE */}
+                  <tr className="bg-blue-600 text-white">
+                    <td className="p-6 text-lg font-black uppercase">SUBTOTAL {varie}</td>
+                    <td className="p-6 text-right text-xl font-bold">{subtotalLectura.toLocaleString()}</td>
+                    <td className="p-6"></td>
+                    <td className="p-6 text-right text-3xl font-black border-l border-blue-500">
+                      {subtotalDiferencia.toLocaleString()} <span className="text-sm">Kg</span>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+      </div>
+    ));
+  };
+
+  // --- RENDER VISTA GERENCIAL (Original) ---
+  const renderTablaGerencial = () => (
+    <div className="bg-slate-900 rounded-[40px] shadow-2xl overflow-hidden border border-white/10">
+      <div className="overflow-x-auto">
+        <table className="w-full text-[11px] text-left border-collapse">
+          <thead className="bg-white/5 text-slate-400 font-bold uppercase">
+            <tr>
+              <th className="p-4">Fecha</th>
+              <th className="p-4 text-right">L. Ini CPO</th>
+              <th className="p-4 text-right">L. Fin CPO</th>
+              <th className="p-4 text-right">L. Ini RBD</th>
+              <th className="p-4 text-right">L. Fin RBD</th>
+              <th className="p-4 text-right">Inv Ini</th>
+              <th className="p-4 text-right">Inv Fin</th>
+              <th className="p-4 text-right text-white">Total CPO</th>
+              <th className="p-4 text-right text-emerald-400">Total RBD</th>
+              <th className="p-4 text-right">AGL</th>
+              <th className="p-4 text-right">Balance</th>
+              <th className="p-4 text-right">% Merma</th>
+            </tr>
+          </thead>
+          <tbody className="text-slate-300">
+            {balanceData.map((b, idx) => {
+              const totalCPO = b.flujometro_final_cpo - b.flujometro_inicial_cpo;
+              const totalRBD = b.flujometro_final_rbd - b.flujometro_inicial_rbd;
+              const balance = (totalCPO + b.inventario_inicial_ds3) - (totalRBD + b.agl + b.reproceso + b.inventario_final_ds3);
+              const merma = totalCPO > 0 ? (balance / totalCPO) * 100 : 0;
+
+              return (
+                <tr key={idx} className="border-b border-white/5 hover:bg-white/5">
+                  <td className="p-4 font-bold">{b.fecha3}</td>
+                  <td className="p-4 text-right">{b.flujometro_inicial_cpo?.toLocaleString()}</td>
+                  <td className="p-4 text-right">{b.flujometro_final_cpo?.toLocaleString()}</td>
+                  <td className="p-4 text-right">{b.flujometro_inicial_rbd?.toLocaleString()}</td>
+                  <td className="p-4 text-right">{b.flujometro_final_rbd?.toLocaleString()}</td>
+                  <td className="p-4 text-right">{b.inventario_inicial_ds3?.toLocaleString()}</td>
+                  <td className="p-4 text-right">{b.inventario_final_ds3?.toLocaleString()}</td>
+                  <td className="p-4 text-right font-bold text-white">{totalCPO.toLocaleString()}</td>
+                  <td className="p-4 text-right font-bold text-emerald-400">{totalRBD.toLocaleString()}</td>
+                  <td className="p-4 text-right">{b.agl?.toLocaleString()}</td>
+                  <td className="p-4 text-right font-black text-blue-400">{balance.toLocaleString()}</td>
+                  <td className={`p-4 text-right font-bold ${merma > 1 ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {merma.toFixed(2)}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-8">
+        
+        {/* CABECERA Y SELECTOR DE VISTA */}
+        <div className="bg-white p-8 rounded-[45px] shadow-sm border border-slate-200">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+            <div>
+              <h1 className="text-4xl font-black tracking-tighter text-slate-900 uppercase">Reportes Refinería</h1>
+              <p className="text-slate-500 font-medium">Análisis de Auditoría y Balances Gerenciales</p>
+            </div>
+            
+            <div className="flex bg-slate-100 p-1.5 rounded-[25px] shadow-inner border border-slate-200">
+              <button 
+                onClick={() => setModoVista('AUDITORIA')}
+                className={`px-8 py-3 rounded-2xl text-[10px] font-black transition-all ${modoVista === 'AUDITORIA' ? 'bg-white shadow-xl text-blue-600 scale-105' : 'text-slate-400'}`}
+              >
+                VISTA AUDITORÍA
+              </button>
+              <button 
+                onClick={() => setModoVista('GERENCIAL')}
+                className={`px-8 py-3 rounded-2xl text-[10px] font-black transition-all ${modoVista === 'GERENCIAL' ? 'bg-white shadow-xl text-emerald-600 scale-105' : 'text-slate-400'}`}
+              >
+                REPORTE GERENCIAL
+              </button>
+            </div>
+          </div>
+
+          {/* FILTROS */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 pt-8 border-t border-slate-100">
+            <div className="space-y-1">
+              <label className="text-[9px] font-black text-slate-400 ml-2">FECHA INICIO</label>
+              <input type="date" className="w-full p-3 bg-slate-50 rounded-2xl font-bold text-xs border-none" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-black text-slate-400 ml-2">FECHA FIN</label>
+              <input type="date" className="w-full p-3 bg-slate-50 rounded-2xl font-bold text-xs border-none" value={fechaFin} onChange={e => setFechaFin(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-black text-slate-400 ml-2">OPERACIÓN</label>
+              <select className="w-full p-3 bg-slate-50 rounded-2xl font-bold text-xs border-none uppercase" value={filtroOperacion} onChange={e => setFiltroOperacion(e.target.value)}>
+                <option value="TODOS">TODAS</option>
+                <option value="ENTRADA ACP">ENTRADA ACP</option>
+                <option value="SALIDA RBD">SALIDA RBD</option>
+                <option value="ACIDO GRASO">ACIDO GRASO</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-black text-slate-400 ml-2">VARIEDAD</label>
+              <select className="w-full p-3 bg-slate-50 rounded-2xl font-bold text-xs border-none uppercase" value={filtroVariedad} onChange={e => setFiltroVariedad(e.target.value)}>
+                <option value="TODOS">TODAS</option>
+                <option value="GUINENSIS">GUINENSIS</option>
+                <option value="HIBRIDO">HIBRIDO</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* CONTENIDO PRINCIPAL */}
+        {loading ? (
+          <div className="flex flex-col justify-center items-center p-20 gap-4">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-xs font-black text-slate-400 animate-pulse uppercase">Procesando datos...</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-blue-900/20 text-blue-400 border-b border-blue-500/10 font-black text-[7px]">
-                  <th className="p-2">FECHA3</th>
-                  <th className="p-2 text-right">FLUJOMETRO INICIAL CPO</th>
-                  <th className="p-2 text-right">FLUJOMETRO FINAL CPO</th>
-                  <th className="p-2 text-right">FLUJOMETRO INICIAL RBD</th>
-                  <th className="p-2 text-right">FLUJOMETRO FINAL RBD</th>
-                  <th className="p-2 text-right">INVENTARIO INICIAL DS3</th>
-                  <th className="p-2 text-right">INVENTARIO FINAL DS3</th>
-                  <th className="p-2 text-right">TOTAL CPO</th>
-                  <th className="p-2 text-right">TOTAL RBD</th>
-                  <th className="p-2 text-right">AGL</th>
-                  <th className="p-2 text-right">REPROCESO</th>
-                  <th className="p-2 text-right">BALANCE CPO</th>
-                  <th className="p-2 text-right">DIFERENCIA</th>
-                  <th className="p-2 text-right text-red-500">% MERMA</th>
-                  <th className="p-2 text-right">% REPROCESO</th>
-                </tr>
-              </thead>
-              <tbody className="text-[9px]">
-                {balanceData.map((b, i) => {
-                  const totalCPO = b.total_cpo || 0;
-                  const totalRBD = b.total_rbd || 0;
-                  const agl = b.agl_produccion || 0;
-                  const reproceso = b.reproceso || 0;
-                  const invIni = b.inventario_inicial_ds3 || 0;
-                  const invFin = b.inventario_final_ds3 || 0;
-                  
-                  // Cálculos siguiendo la lógica del Excel
-                  const balanceCPO = totalCPO + invIni - invFin;
-                  const diferencia = balanceCPO - (totalRBD + agl);
-                  const merma = balanceCPO > 0 ? (diferencia / balanceCPO) * 100 : 0;
-                  const porcReproceso = totalCPO > 0 ? (reproceso / totalCPO) * 100 : 0;
-
-                  return (
-                    <tr key={i} className="border-b border-white/5 hover:bg-blue-500/5 transition-all">
-                      <td className="p-2 font-bold">{b.fecha}</td>
-                      <td className="p-2 text-right text-zinc-500">{b.flujometro_inicial_cpo?.toLocaleString() || 0}</td>
-                      <td className="p-2 text-right text-zinc-500">{b.flujometro_final_cpo?.toLocaleString() || 0}</td>
-                      <td className="p-2 text-right text-zinc-500">{b.flujometro_inicial_rbd?.toLocaleString() || 0}</td>
-                      <td className="p-2 text-right text-zinc-500">{b.flujometro_final_rbd?.toLocaleString() || 0}</td>
-                      <td className="p-2 text-right text-zinc-400">{invIni.toLocaleString()}</td>
-                      <td className="p-2 text-right text-zinc-400">{invFin.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums font-bold text-white">{totalCPO.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums text-emerald-400 font-bold">{totalRBD.toLocaleString()}</td>
-                      <td className="p-2 text-right text-orange-300">{agl.toLocaleString()}</td>
-                      <td className="p-2 text-right text-zinc-500">{reproceso.toLocaleString()}</td>
-                      <td className="p-2 text-right tabular-nums font-black text-blue-400 bg-white/5">{balanceCPO.toLocaleString()}</td>
-                      <td className="p-2 text-right text-zinc-300">{diferencia.toLocaleString()}</td>
-                      <td className={`p-2 text-right font-black ${merma > 1 ? 'text-red-500' : 'text-emerald-500'}`}>
-                        {merma.toFixed(2)}%
-                      </td>
-                      <td className="p-2 text-right text-zinc-500">{porcReproceso.toFixed(2)}%</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          modoVista === 'AUDITORIA' ? renderTablaAuditoria() : renderTablaGerencial()
         )}
+
       </div>
     </div>
   );
