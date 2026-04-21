@@ -94,37 +94,60 @@ export default function ReporteFinalAuditoria() {
     if (registros.length === 0) return alert("No hay datos");
     const doc = new jsPDF();
     
-    doc.setFontSize(14);
-    doc.text("REPORTE DETALLADO DE AUDITORÍA", 14, 15);
+    // Título Principal
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text("REPORTE DE AUDITORÍA REFINERÍA", 14, 15);
+    
+    // Gran Total Superior
+    const granTotal = registros.reduce((acc, curr) => acc + curr.kgResultantes, 0);
+    doc.setFillColor(240, 240, 240);
+    doc.rect(14, 20, 182, 10, 'F');
+    doc.setFontSize(11);
+    doc.setTextColor(0, 100, 0);
+    doc.text(`GRAN TOTAL PRODUCCIÓN PERIODO: ${granTotal.toLocaleString()} KG`, 18, 27);
+    
     doc.setFontSize(9);
-    doc.text(`Periodo: ${fechaInicio} al ${fechaFin}`, 14, 20);
+    doc.setTextColor(100);
+    doc.text(`Periodo: ${fechaInicio} al ${fechaFin}`, 14, 35);
 
-    // Agrupamos para el PDF para que no salga mezclado
     const ops = Array.from(new Set(registros.map(r => r.tipo_operacion)));
-    let currentY = 25;
+    let currentY = 40;
 
     ops.forEach(op => {
       const regsOp = registros.filter(r => r.tipo_operacion === op);
-      const subtotalOp = regsOp.reduce((acc, curr) => acc + curr.kgResultantes, 0);
+      const variedades = Array.from(new Set(regsOp.map(r => r.variedad)));
 
-      autoTable(doc, {
-        startY: currentY,
-        head: [[{ content: `${op} - TOTAL ACUMULADO: ${subtotalOp.toLocaleString()} KG`, colSpan: 7, styles: { fillColor: [40, 40, 40] } }],
-               ['Fecha', 'Detalle', 'Variedad', 'L. Ant', 'L. Act', 'Egresos', 'Resultado']],
-        body: regsOp.map(r => [
-          new Date(r.created_at).toLocaleDateString(),
-          r.tanque_id || '-',
-          r.variedad,
-          r.lecturaAnterior.toLocaleString(),
-          parseFloat(r.valor_lectura).toLocaleString(),
-          r.egresosTotales.toLocaleString(),
-          r.kgResultantes.toLocaleString()
-        ]),
-        theme: 'grid',
-        styles: { fontSize: 7 },
-        margin: { top: 10 }
+      variedades.forEach(varName => {
+        const items = regsOp.filter(r => r.variedad === varName);
+        const subtotalVar = items.reduce((acc, curr) => acc + curr.kgResultantes, 0);
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [
+            [{ content: `OPERACIÓN: ${op} | VARIEDAD: ${varName}`, colSpan: 6, styles: { fillColor: [60, 60, 60], fontStyle: 'bold' } }],
+            ['Fecha', 'Tanque', 'L. Ant', 'L. Act', 'Egresos (V+L)', 'Resultado']
+          ],
+          body: [
+            ...items.map(r => [
+              new Date(r.created_at).toLocaleDateString() + ' ' + new Date(r.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+              r.tanque_id || '-',
+              r.lecturaAnterior.toLocaleString(),
+              parseFloat(r.valor_lectura).toLocaleString(),
+              r.egresosTotales.toLocaleString(),
+              r.kgResultantes.toLocaleString()
+            ]),
+            // Fila de subtotal por variedad
+            [{ content: `SUBTOTAL ${varName}:`, colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [245, 245, 245] } }, 
+             { content: `${subtotalVar.toLocaleString()} KG`, styles: { fontStyle: 'bold', fillColor: [245, 245, 245] } }]
+          ],
+          theme: 'grid',
+          styles: { fontSize: 7 },
+          margin: { left: 14, right: 14 },
+          pageBreak: 'auto'
+        });
+        currentY = (doc as any).lastAutoTable.finalY + 8;
       });
-      currentY = (doc as any).lastAutoTable.finalY + 10;
     });
 
     doc.save(`Auditoria_Refineria_${fechaInicio}.pdf`);
@@ -173,7 +196,7 @@ export default function ReporteFinalAuditoria() {
                   </thead>
                   <tbody className="text-zinc-300 text-[11px]">
                     {items.map(r => (
-                      <tr key={r.id} className="border-b border-white/5 hover:bg-white/5">
+                      <tr key={r.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                         <td className="p-4 text-zinc-500">{new Date(r.created_at).toLocaleString()}</td>
                         <td className="p-4 text-center font-bold">{r.tanque_id || '-'}</td>
                         <td className="p-4 text-center">
@@ -208,24 +231,26 @@ export default function ReporteFinalAuditoria() {
         <div className="bg-zinc-900 p-8 rounded-[40px] border border-white/10 flex flex-col md:flex-row justify-between items-center gap-6 shadow-2xl">
           <h1 className="text-3xl font-black italic tracking-tighter">Auditoría Refinería</h1>
           <div className="flex flex-wrap gap-3">
-            <button onClick={exportarExcel} className="bg-emerald-600 px-6 py-2 rounded-xl font-black hover:bg-emerald-700">📊 EXCEL</button>
-            <button onClick={exportarPDF} className="bg-red-600 px-6 py-2 rounded-xl font-black hover:bg-red-700">📕 PDF</button>
-            <button onClick={enviarWhatsAppSinNumero} className="bg-green-500 text-black px-6 py-2 rounded-xl font-black hover:bg-green-400">📲 WHATSAPP</button>
+            <button onClick={exportarExcel} className="bg-emerald-600 px-6 py-2 rounded-xl font-black hover:bg-emerald-700 transition-all">📊 EXCEL</button>
+            <button onClick={exportarPDF} className="bg-red-600 px-6 py-2 rounded-xl font-black hover:bg-red-700 transition-all">📕 PDF</button>
+            <button onClick={enviarWhatsAppSinNumero} className="bg-green-500 text-black px-6 py-2 rounded-xl font-black hover:bg-green-400 transition-all flex items-center gap-2">
+              <span className="text-lg">📲</span> WHATSAPP
+            </button>
           </div>
         </div>
 
-        <div className="bg-zinc-900 p-6 rounded-[30px] border border-white/10 grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-zinc-900 p-6 rounded-[30px] border border-white/10 grid grid-cols-2 md:grid-cols-4 gap-4 shadow-xl">
           <div className="flex flex-col gap-1">
             <span className="text-zinc-600 font-bold ml-2">FECHA INICIO</span>
-            <input type="date" className="bg-black border border-white/10 p-3 rounded-xl" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} />
+            <input type="date" className="bg-black border border-white/10 p-3 rounded-xl text-white" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-zinc-600 font-bold ml-2">FECHA FIN</span>
-            <input type="date" className="bg-black border border-white/10 p-3 rounded-xl" value={fechaFin} onChange={e => setFechaFin(e.target.value)} />
+            <input type="date" className="bg-black border border-white/10 p-3 rounded-xl text-white" value={fechaFin} onChange={e => setFechaFin(e.target.value)} />
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-zinc-600 font-bold ml-2">OPERACIÓN</span>
-            <select className="bg-black border border-white/10 p-3 rounded-xl" value={filtroOperacion} onChange={e => setFiltroOperacion(e.target.value)}>
+            <select className="bg-black border border-white/10 p-3 rounded-xl text-white" value={filtroOperacion} onChange={e => setFiltroOperacion(e.target.value)}>
               <option value="TODOS">TODAS</option>
               <option value="ENTRADA_ACP">ENTRADA_ACP</option>
               <option value="SALIDA_RBD">SALIDA_RBD</option>
@@ -234,7 +259,7 @@ export default function ReporteFinalAuditoria() {
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-zinc-600 font-bold ml-2">VARIEDAD</span>
-            <select className="bg-black border border-white/10 p-3 rounded-xl" value={filtroVariedad} onChange={e => setFiltroVariedad(e.target.value)}>
+            <select className="bg-black border border-white/10 p-3 rounded-xl text-white" value={filtroVariedad} onChange={e => setFiltroVariedad(e.target.value)}>
               <option value="TODOS">TODAS</option>
               <option value="ALTO OLEICO">ALTO OLEICO</option>
               <option value="GUINENSIS">GUINENSIS</option>
