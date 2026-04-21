@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable'; // Importación corregida para compatibilidad
+import autoTable from 'jspdf-autotable';
 
 export default function ReporteFinalAuditoria() {
   const [loading, setLoading] = useState(true);
@@ -28,8 +28,6 @@ export default function ReporteFinalAuditoria() {
 
     if (!error && todos) {
       const procesados = todos.map((reg, index) => {
-        // Para Ácido Graso, buscamos el anterior del MISMO tanque.
-        // Para otros, el anterior de la misma operación.
         const anterior = todos.slice(0, index).reverse().find(r => 
           r.tipo_operacion === reg.tipo_operacion && 
           (reg.tipo_operacion === 'ACIDO_GRASO' ? r.tanque_id === reg.tanque_id : true)
@@ -38,17 +36,14 @@ export default function ReporteFinalAuditoria() {
         const lecturaActual = parseFloat(reg.valor_lectura) || 0;
         const lecturaAnterior = anterior ? parseFloat(anterior.valor_lectura) : lecturaActual;
         
-        // Sumamos los egresos registrados en el formulario
         const egresoV = parseFloat(reg.egreso_venta) || 0;
         const egresoJ = parseFloat(reg.egreso_jaboneria) || 0;
         const egresosTotales = egresoV + egresoJ;
 
         let kg = 0;
         if (reg.tipo_operacion === 'ACIDO_GRASO') {
-          // FÓRMULA: (Inv. Final - Inv. Inicial) + Salidas
           kg = (lecturaActual - lecturaAnterior) + egresosTotales;
         } else if (reg.tipo_operacion === 'ENTRADA_ACP' || reg.tipo_operacion === 'SALIDA_RBD') {
-          // Lógica de flujómetro estándar
           kg = (lecturaActual - lecturaAnterior);
         } else {
           kg = lecturaActual;
@@ -57,6 +52,8 @@ export default function ReporteFinalAuditoria() {
         return { 
           ...reg, 
           lecturaAnterior, 
+          egresoV,
+          egresoJ,
           egresosTotales,
           kgResultantes: kg 
         };
@@ -74,77 +71,71 @@ export default function ReporteFinalAuditoria() {
   };
 
   const exportarExcel = () => {
-    if (registros.length === 0) return alert("No hay datos para exportar");
-    try {
-      const dataExcel = registros.map(r => ({
-        Fecha: new Date(r.created_at).toLocaleString(),
-        Operacion: r.tipo_operacion,
-        Detalle: r.tanque_id || '-',
-        Variedad: r.variedad,
-        'Lectura Ant.': r.lecturaAnterior,
-        'Lectura Act.': r.valor_lectura,
-        'Egresos (V/J)': r.egresosTotales || 0,
-        'Producción KG': r.kgResultantes
-      }));
-      const ws = XLSX.utils.json_to_sheet(dataExcel);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Auditoria");
-      XLSX.writeFile(wb, `Reporte_Auditoria_${fechaInicio}_al_${fechaFin}.xlsx`);
-    } catch (err) {
-      alert("Error al generar Excel");
-    }
+    if (registros.length === 0) return alert("No hay datos");
+    const dataExcel = registros.map(r => ({
+      Fecha: new Date(r.created_at).toLocaleString(),
+      Operacion: r.tipo_operacion,
+      Tanque: r.tanque_id || '-',
+      Variedad: r.variedad,
+      'Lectura Ant.': r.lecturaAnterior,
+      'Lectura Act.': r.valor_lectura,
+      'Venta KG': r.egresoV,
+      'Local KG': r.egresoJ,
+      'Producción Total': r.kgResultantes,
+      Foto: r.foto_url || 'Sin foto'
+    }));
+    const ws = XLSX.utils.json_to_sheet(dataExcel);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Auditoria");
+    XLSX.writeFile(wb, `Reporte_Auditoria_${fechaInicio}_al_${fechaFin}.xlsx`);
   };
 
   const exportarPDF = () => {
-    if (registros.length === 0) return alert("No hay datos para exportar");
+    if (registros.length === 0) return alert("No hay datos");
+    const doc = new jsPDF();
+    
+    doc.setFontSize(14);
+    doc.text("REPORTE DETALLADO DE AUDITORÍA", 14, 15);
+    doc.setFontSize(9);
+    doc.text(`Periodo: ${fechaInicio} al ${fechaFin}`, 14, 20);
 
-    try {
-      const doc = new jsPDF();
-      doc.setFontSize(18);
-      doc.text("REPORTE AUDITORIA REFINERIA", 14, 15);
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text(`Periodo: ${fechaInicio} al ${fechaFin}`, 14, 22);
+    // Agrupamos para el PDF para que no salga mezclado
+    const ops = Array.from(new Set(registros.map(r => r.tipo_operacion)));
+    let currentY = 25;
 
-      const tableData = registros.map(r => [
-        new Date(r.created_at).toLocaleString(),
-        r.tipo_operacion + (r.tanque_id ? ` (${r.tanque_id})` : ''),
-        r.variedad,
-        r.lecturaAnterior.toLocaleString(),
-        parseFloat(r.valor_lectura).toLocaleString(),
-        r.egresosTotales > 0 ? r.egresosTotales.toLocaleString() : '-',
-        r.kgResultantes.toLocaleString()
-      ]);
+    ops.forEach(op => {
+      const regsOp = registros.filter(r => r.tipo_operacion === op);
+      const subtotalOp = regsOp.reduce((acc, curr) => acc + curr.kgResultantes, 0);
 
       autoTable(doc, {
-        startY: 30,
-        head: [['Fecha', 'Operación', 'Variedad', 'L. Ant', 'L. Act', 'Egresos', 'Total KG']],
-        body: tableData,
+        startY: currentY,
+        head: [[{ content: `${op} - TOTAL ACUMULADO: ${subtotalOp.toLocaleString()} KG`, colSpan: 7, styles: { fillColor: [40, 40, 40] } }],
+               ['Fecha', 'Detalle', 'Variedad', 'L. Ant', 'L. Act', 'Egresos', 'Resultado']],
+        body: regsOp.map(r => [
+          new Date(r.created_at).toLocaleDateString(),
+          r.tanque_id || '-',
+          r.variedad,
+          r.lecturaAnterior.toLocaleString(),
+          parseFloat(r.valor_lectura).toLocaleString(),
+          r.egresosTotales.toLocaleString(),
+          r.kgResultantes.toLocaleString()
+        ]),
         theme: 'grid',
-        headStyles: { fillColor: [0, 0, 0], textColor: [255, 255, 255] },
         styles: { fontSize: 7 },
+        margin: { top: 10 }
       });
+      currentY = (doc as any).lastAutoTable.finalY + 10;
+    });
 
-      doc.save(`Auditoria_${fechaInicio}_al_${fechaFin}.pdf`);
-    } catch (error) {
-      console.error("Error PDF:", error);
-      alert("Error al generar el PDF.");
-    }
+    doc.save(`Auditoria_Refineria_${fechaInicio}.pdf`);
   };
 
   const enviarWhatsAppSinNumero = () => {
-    if (registros.length === 0) return alert("No hay datos para enviar");
-    let mensaje = `*REPORTE AUDITORIA REFINERIA*\n`;
-    mensaje += `*Periodo:* ${fechaInicio} a ${fechaFin}\n\n`;
-    registros.forEach(r => {
-      mensaje += `🔹 *${r.tipo_operacion}* ${r.tanque_id || ''} | ${r.variedad}\n`;
-      if(r.tipo_operacion === 'ACIDO_GRASO') {
-        mensaje += `Inv. Act: ${parseFloat(r.valor_lectura).toLocaleString()} - Inv. Ant: ${r.lecturaAnterior.toLocaleString()}\n`;
-        mensaje += `Egresos: ${r.egresosTotales.toLocaleString()} KG\n`;
-      } else {
-        mensaje += `L. Act: ${parseFloat(r.valor_lectura).toLocaleString()} - L. Ant: ${r.lecturaAnterior.toLocaleString()}\n`;
-      }
-      mensaje += `*PROD: ${r.kgResultantes.toLocaleString()} KG*\n`;
+    if (registros.length === 0) return alert("No hay datos");
+    let mensaje = `*REPORTE AUDITORIA*\n*Periodo:* ${fechaInicio} / ${fechaFin}\n\n`;
+    registros.slice(0, 10).forEach(r => {
+      mensaje += `🔸 *${r.tipo_operacion}* (${r.tanque_id || 'S/T'})\n`;
+      mensaje += `PROD: ${r.kgResultantes.toLocaleString()} KG\n`;
       mensaje += `----------------------------\n`;
     });
     window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank');
@@ -158,7 +149,9 @@ export default function ReporteFinalAuditoria() {
 
       return (
         <div key={opName} className="mb-10 bg-zinc-900 rounded-[40px] overflow-hidden border border-white/10 shadow-2xl">
-          <div className="p-6 bg-white/5 border-b border-white/10 text-2xl font-black italic uppercase">{opName}</div>
+          <div className="p-6 bg-white/5 border-b border-white/10 text-2xl font-black italic uppercase flex justify-between">
+            <span>{opName}</span>
+          </div>
           {variedadesOp.map(varName => {
             const items = registrosOp.filter(r => r.variedad === varName);
             const subtotal = items.reduce((acc, curr) => acc + (curr.kgResultantes || 0), 0);
@@ -169,26 +162,34 @@ export default function ReporteFinalAuditoria() {
                   <thead>
                     <tr className="text-[9px] text-zinc-500 uppercase font-bold border-b border-white/5">
                       <th className="p-4">Fecha / Hora</th>
-                      <th className="p-4 text-center">Detalle</th>
+                      <th className="p-4 text-center">Tanque</th>
+                      <th className="p-4 text-center">Evidencia</th>
                       <th className="p-4 text-right">L. Anterior</th>
-                      <th className="p-4 text-right text-white">L. Actual</th>
-                      <th className="p-4 text-right text-orange-400">Egresos</th>
+                      <th className="p-4 text-right">L. Actual</th>
+                      <th className="p-4 text-right text-emerald-500">Venta</th>
+                      <th className="p-4 text-right text-orange-400">Local</th>
                       <th className="p-4 text-right">Resultado KG</th>
                     </tr>
                   </thead>
                   <tbody className="text-zinc-300 text-[11px]">
                     {items.map(r => (
-                      <tr key={r.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                      <tr key={r.id} className="border-b border-white/5 hover:bg-white/5">
                         <td className="p-4 text-zinc-500">{new Date(r.created_at).toLocaleString()}</td>
-                        <td className="p-4 text-center font-bold text-zinc-400">{r.tanque_id || '-'}</td>
+                        <td className="p-4 text-center font-bold">{r.tanque_id || '-'}</td>
+                        <td className="p-4 text-center">
+                          {r.foto_url && (
+                            <button onClick={() => window.open(r.foto_url, '_blank')} className="bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md border border-blue-500/20 text-[8px] font-bold">VER FOTO</button>
+                          )}
+                        </td>
                         <td className="p-4 text-right">{r.lecturaAnterior?.toLocaleString()}</td>
                         <td className="p-4 text-right font-bold text-white">{parseFloat(r.valor_lectura).toLocaleString()}</td>
-                        <td className="p-4 text-right text-orange-400">{r.egresosTotales > 0 ? r.egresosTotales.toLocaleString() : '-'}</td>
+                        <td className="p-4 text-right text-emerald-500">{r.egresoV?.toLocaleString() || '-'}</td>
+                        <td className="p-4 text-right text-orange-400">{r.egresoJ?.toLocaleString() || '-'}</td>
                         <td className="p-4 text-right font-black text-blue-400">{r.kgResultantes?.toLocaleString()}</td>
                       </tr>
                     ))}
                     <tr className="bg-black/40 font-black">
-                      <td colSpan={5} className="p-6 text-right text-zinc-400 uppercase">SUBTOTAL {varName}</td>
+                      <td colSpan={7} className="p-6 text-right text-zinc-400 uppercase font-bold">SUBTOTAL {varName}</td>
                       <td className="p-6 text-right text-3xl text-emerald-400 tabular-nums">{subtotal.toLocaleString()} KG</td>
                     </tr>
                   </tbody>
@@ -204,19 +205,12 @@ export default function ReporteFinalAuditoria() {
   return (
     <div className="min-h-screen bg-black p-4 md:p-8 font-sans text-white uppercase text-[10px]">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="bg-zinc-900 p-8 rounded-[40px] border border-white/10 space-y-6 shadow-2xl">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-            <h1 className="text-3xl font-black italic tracking-tighter">Auditoría Refinería</h1>
-            <div className="flex flex-wrap gap-3 justify-center">
-              <button onClick={exportarExcel} className="bg-emerald-600 px-6 py-2 rounded-xl font-black hover:bg-emerald-700 transition-all">📊 EXCEL</button>
-              <button onClick={exportarPDF} className="bg-red-600 px-6 py-2 rounded-xl font-black hover:bg-red-700 transition-all">📕 PDF</button>
-              <button onClick={enviarWhatsAppSinNumero} className="bg-green-500 text-black px-6 py-2 rounded-xl font-black hover:bg-green-400 transition-all flex items-center gap-2">
-                <span className="text-lg">📲</span> WHATSAPP
-              </button>
-            </div>
-          </div>
-          <div className="flex bg-black p-1.5 rounded-2xl border border-white/10 w-fit">
-            <button className="px-6 py-2 rounded-xl font-black bg-white text-black">AUDITORÍA</button>
+        <div className="bg-zinc-900 p-8 rounded-[40px] border border-white/10 flex flex-col md:flex-row justify-between items-center gap-6 shadow-2xl">
+          <h1 className="text-3xl font-black italic tracking-tighter">Auditoría Refinería</h1>
+          <div className="flex flex-wrap gap-3">
+            <button onClick={exportarExcel} className="bg-emerald-600 px-6 py-2 rounded-xl font-black hover:bg-emerald-700">📊 EXCEL</button>
+            <button onClick={exportarPDF} className="bg-red-600 px-6 py-2 rounded-xl font-black hover:bg-red-700">📕 PDF</button>
+            <button onClick={enviarWhatsAppSinNumero} className="bg-green-500 text-black px-6 py-2 rounded-xl font-black hover:bg-green-400">📲 WHATSAPP</button>
           </div>
         </div>
 
