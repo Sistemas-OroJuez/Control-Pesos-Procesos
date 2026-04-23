@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
-const BUCKET_NAME = 'fotos_refineria'; 
+const BUCKET_NAME = 'refineria_assets'; 
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
 
 export default function EntradaACP() {
@@ -16,7 +16,7 @@ export default function EntradaACP() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA
+  // PERSISTENCIA (Tu lógica intacta)
   useEffect(() => {
     const backup = localStorage.getItem('backup_entrada_acp');
     if (backup) {
@@ -57,13 +57,13 @@ export default function EntradaACP() {
         img.src = e.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1000; 
+          const MAX_WIDTH = 1200; 
           const scale = MAX_WIDTH / img.width;
           canvas.width = MAX_WIDTH;
           canvas.height = img.height * scale;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.8);
+          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.85);
         };
       };
     });
@@ -79,7 +79,7 @@ export default function EntradaACP() {
     try {
       const blob = await compressImage(file);
       
-      // 1. CONVERTIR A BASE64 PARA ENVÍO DIRECTO
+      // Convertimos a Base64 para pasar al servidor
       const reader = new FileReader();
       const base64Promise = new Promise((resolve) => {
         reader.onloadend = () => resolve(reader.result);
@@ -89,12 +89,7 @@ export default function EntradaACP() {
 
       setStatusText('Subiendo Archivo...');
       const fileName = `entrada_acp_${Date.now()}.jpg`;
-      const finalFile = new File([blob], fileName, { type: 'image/jpeg' });
-
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET_NAME)
-        .upload(fileName, finalFile, { contentType: 'image/jpeg', upsert: true });
-        
+      const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, blob);
       if (upErr) throw upErr;
 
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
@@ -102,7 +97,7 @@ export default function EntradaACP() {
 
       setStatusText('Analizando con IA...');
       
-      // 2. LLAMADA A TU PROPIO SERVIDOR (route.ts con Tesseract)
+      // CAMBIO CLAVE: Llamamos a tu ruta interna que tiene el Tesseract calibrado
       const res = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -114,24 +109,22 @@ export default function EntradaACP() {
 
       const result = await res.json();
       
-      if (result.error) throw new Error(result.error);
+      // Si el servidor devolvió el valorPrincipal (la sumatoria)
+      const valorDetectado = result.valorPrincipal ? result.valorPrincipal.toString() : "0";
 
-      // Usamos el valorPrincipal que devuelve tu Tesseract configurado
-      const valorLimpio = result.valorPrincipal ? result.valorPrincipal.toString() : "0";
-
-      setDatos({ 
-        totalizador: valorLimpio, 
-        status: valorLimpio === "0" ? 'manual' : 'completado' 
+      setDatos({
+        totalizador: valorDetectado,
+        status: valorDetectado === "0" ? 'manual' : 'completado'
       });
 
-      if (valorLimpio === "0") {
-        alert("La IA no detectó el número. Por favor, ingrésalo manualmente.");
+      if (valorDetectado === "0") {
+        alert("La IA no detectó el número. Por favor ingresa el valor manual.");
       }
 
     } catch (err: any) {
-      console.error("Error en proceso:", err);
+      console.error("Error:", err);
       setDatos({ totalizador: "0", status: 'manual' });
-      alert("Aviso: El análisis automático falló. La foto se guardó, por favor ingresa el valor manualmente.");
+      alert("Error de red. La foto se guardó, ingresa el valor manualmente.");
     } finally {
       setLoading(false);
       setStatusText('');
@@ -139,12 +132,12 @@ export default function EntradaACP() {
   };
 
   const handleConfirmarYGuardar = async () => {
-    if (!fotoUrl) return; 
+    if (!datos || !fotoUrl) return;
     setLoading(true);
     try {
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'ENTRADA_ACP',
-          valor_lectura: parseFloat(datos?.totalizador || "0"), 
+          valor_lectura: parseFloat(datos.totalizador), 
           foto_url: fotoUrl,
           observaciones: observaciones,
           usuario_registro: 'Operador Entrada',
@@ -159,26 +152,23 @@ export default function EntradaACP() {
   };
 
   const handleWhatsApp = async () => {
-    if (!fotoUrl) return;
-
+    if (!datos || !fotoUrl) return;
     setLoading(true);
     setStatusText('Guardando y preparando WhatsApp...');
-
     try {
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'ENTRADA_ACP',
-          valor_lectura: parseFloat(datos?.totalizador || "0"), 
+          valor_lectura: parseFloat(datos.totalizador), 
           foto_url: fotoUrl,
           observaciones: observaciones,
           usuario_registro: 'Operador Entrada',
           variedad: variedad,
           es_reproceso: esReproceso
       }]);
-
       if (error) throw error;
 
       const msg = `*REPORTE ENTRADA ACP*%0A` +
-                  `*Lectura:* ${datos?.totalizador || 'Manual'}%0A` +
+                  `*Lectura:* ${datos.totalizador}%0A` +
                   `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
                   `*Variedad:* ${variedad}%0A` +
                   `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
@@ -187,12 +177,8 @@ export default function EntradaACP() {
 
       window.open(`https://wa.me/?text=${msg}`, '_blank');
       resetTodo(); 
-    } catch (err: any) { 
-      alert("Error al guardar: " + err.message); 
-    } finally { 
-      setLoading(false); 
-      setStatusText('');
-    }
+    } catch (err: any) { alert("Error al guardar: " + err.message); }
+    finally { setLoading(false); setStatusText(''); }
   };
 
   return (
@@ -240,14 +226,11 @@ export default function EntradaACP() {
                 />
                 <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase" rel="noreferrer">REVISAR FOTO ORIGINAL</a>
             </div>
-            
             <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" placeholder="NOTAS ADICIONALES..." />
-
             <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3">
               <span className="text-lg">💬</span>
               <span className="text-[10px] font-black text-emerald-400">ENVIAR REPORTE Y GUARDAR</span>
             </button>
-            
             <div className="grid grid-cols-2 gap-3">
                 <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400">REINTENTAR</button>
                 <button onClick={handleConfirmarYGuardar} className="py-5 bg-blue-600 rounded-2xl font-black text-[9px]">CONFIRMAR</button>
