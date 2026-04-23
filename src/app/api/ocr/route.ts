@@ -1,35 +1,29 @@
+// app/api/ocr/route.ts
 import { NextResponse } from 'next/server';
 
-export async function POST(request: Request) {
+export async function POST(request) {
   try {
-    const body = await request.json();
-    const imageUrl = body.imageUrl || body.url; // Acepta ambos nombres por si acaso
+    const { imageUrl } = await request.json();
 
-    if (!imageUrl) {
-      return NextResponse.json({ error: "No se proporcionó la URL de la imagen" }, { status: 400 });
-    }
-
+    // Creamos el formulario que OCR Space necesita
     const formData = new FormData();
     formData.append('apikey', 'K82540315988957');
     formData.append('url', imageUrl);
     formData.append('language', 'eng');
     formData.append('OCREngine', '2');
 
+    // El servidor hace la petición (aquí NO hay bloqueo de CORS)
     const ocrRes = await fetch('https://api.ocr.space/parse/image', {
       method: 'POST',
-      body: formData,
+      body: formData
     });
 
-    if (!ocrRes.ok) {
-      const errorText = await ocrRes.text();
-      return NextResponse.json({ error: `OCR Space respondió con error: ${errorText}` }, { status: ocrRes.status });
-    }
-
     const data = await ocrRes.json();
+    
+    // Le devolvemos la respuesta de la IA a tu aplicación
     return NextResponse.json(data);
 
-  } catch (error: any) {
-    console.error("Error en el túnel OCR:", error);
+  } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

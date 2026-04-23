@@ -4,7 +4,6 @@ import { supabase } from '@/lib/supabase';
 
 const BUCKET_NAME = 'fotos_refineria'; 
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
-const OCR_API_KEY = 'K82540315988957'; 
 
 export default function EntradaACP() {
   const [loading, setLoading] = useState(false);
@@ -88,16 +87,15 @@ export default function EntradaACP() {
       setFotoUrl(publicUrl);
 
       setStatusText('Analizando con IA...');
-      const formData = new FormData();
-      formData.append('apikey', OCR_API_KEY);
-      formData.append('url', publicUrl);
-      formData.append('language', 'eng');
-      formData.append('OCREngine', '2'); 
-
-      const res = await fetch('https://api.ocr.space/parse/image', {
+      
+      // --- CAMBIO CLAVE: LLAMADA AL PROXY INTERNO ---
+      const res = await fetch('/api/ocr', {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: publicUrl }) 
       });
+
+      if (!res.ok) throw new Error("Error en la respuesta del servidor OCR");
 
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
@@ -152,7 +150,6 @@ export default function EntradaACP() {
     finally { setLoading(false); }
   };
 
-  // --- FUNCIÓN DE WHATSAPP CON GUARDADO PREVIO ---
   const handleWhatsApp = async () => {
     if (!datos || !fotoUrl) return;
 
@@ -160,7 +157,6 @@ export default function EntradaACP() {
     setStatusText('Guardando y preparando WhatsApp...');
 
     try {
-      // Primero guardamos los datos en la base de datos
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'ENTRADA_ACP',
           valor_lectura: parseFloat(datos.totalizador), 
@@ -173,7 +169,6 @@ export default function EntradaACP() {
 
       if (error) throw error;
 
-      // Si el guardado fue exitoso, abrimos WhatsApp
       const msg = `*REPORTE ENTRADA ACP*%0A` +
                   `*Lectura:* ${datos.totalizador}%0A` +
                   `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
@@ -225,11 +220,6 @@ export default function EntradaACP() {
           <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-blue-900/30">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-blue-500 font-black text-[11px] tracking-widest uppercase mb-4">{statusText}</p>
-            {fotoUrl && (
-              <a href={fotoUrl} target="_blank" className="text-[10px] bg-blue-500/10 text-blue-400 px-4 py-2 rounded-full border border-blue-500/20 font-bold animate-pulse">
-                🔗 VER CAPTURA SUBIDA
-              </a>
-            )}
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
