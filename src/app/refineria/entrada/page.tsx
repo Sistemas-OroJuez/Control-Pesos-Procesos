@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
-const BUCKET_NAME = 'refineria_assets'; 
+const BUCKET_NAME = 'fotos_refineria'; 
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
 const OCR_API_KEY = 'K82540315988957'; 
 
