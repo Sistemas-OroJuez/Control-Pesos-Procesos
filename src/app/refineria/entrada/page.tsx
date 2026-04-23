@@ -58,13 +58,13 @@ export default function EntradaACP() {
         img.src = e.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1200; 
+          const MAX_WIDTH = 1000; // Reducimos ligeramente para mayor velocidad
           const scale = MAX_WIDTH / img.width;
           canvas.width = MAX_WIDTH;
           canvas.height = img.height * scale;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.85);
+          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.8);
         };
       };
     });
@@ -79,9 +79,16 @@ export default function EntradaACP() {
 
     try {
       const blob = await compressImage(file);
-      setStatusText('Subiendo Archivo...');
       
-      // --- ARREGLO TÉCNICO: Convertir Blob a File real para asegurar compatibilidad ---
+      // 1. CONVERTIR BLOB A BASE64 PARA EL OCR (Evita el bloqueo CORS)
+      const reader = new FileReader();
+      const base64Promise = new Promise((resolve) => {
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+      const base64Image = await base64Promise as string;
+
+      setStatusText('Subiendo Archivo...');
       const fileName = `entrada_acp_${Date.now()}.jpg`;
       const finalFile = new File([blob], fileName, { type: 'image/jpeg' });
 
@@ -89,7 +96,6 @@ export default function EntradaACP() {
         .from(BUCKET_NAME)
         .upload(fileName, finalFile, {
           contentType: 'image/jpeg',
-          cacheControl: '3600',
           upsert: true
         });
         
@@ -99,21 +105,24 @@ export default function EntradaACP() {
       setFotoUrl(publicUrl);
 
       setStatusText('Analizando con IA...');
+      
+      // 2. PETICIÓN OCR USANDO EL BASE64 EN LUGAR DE LA URL
       const formData = new FormData();
       formData.append('apikey', OCR_API_KEY);
-      formData.append('url', publicUrl);
+      formData.append('base64Image', base64Image); 
       formData.append('language', 'eng');
       formData.append('OCREngine', '2'); 
 
       const res = await fetch('https://api.ocr.space/parse/image', {
         method: 'POST',
-        body: formData,
-        mode: 'cors'
+        body: formData
       });
 
       const result = await res.json();
-      const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
       
+      if (result.IsErroredOnProcessing) throw new Error(result.ErrorMessage);
+
+      const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
       const lineas = textRaw.split('\n');
       let valorDetectado = "0";
 
@@ -127,18 +136,17 @@ export default function EntradaACP() {
         const lineasNumericas = lineas
           .map((l: string) => l.replace(/[^0-9]/g, ''))
           .filter((l: string) => l.length >= 5);
-        
         valorDetectado = lineasNumericas.length >= 2 ? lineasNumericas[1] : (lineasNumericas[0] || "0");
       }
 
-      setDatos({
-        totalizador: valorDetectado,
-        status: 'completado'
-      });
+      setDatos({ totalizador: valorDetectado, status: 'completado' });
 
     } catch (err: any) {
       console.error("Error en proceso:", err);
-      alert("Error de Conexión: " + (err.message || "No se pudo procesar la imagen"));
+      // MODO FALLO SEGURO: Si la IA falla por CORS, permitimos digitar manual
+      // La foto ya está en Supabase en este punto.
+      setDatos({ totalizador: "0", status: 'manual' });
+      alert("Aviso: El análisis automático fue bloqueado por la red. La foto se guardó, por favor ingresa el valor manualmente.");
     } finally {
       setLoading(false);
       setStatusText('');
@@ -146,12 +154,12 @@ export default function EntradaACP() {
   };
 
   const handleConfirmarYGuardar = async () => {
-    if (!datos || !fotoUrl) return;
+    if (!fotoUrl) return; // Permitimos avanzar si hay foto
     setLoading(true);
     try {
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'ENTRADA_ACP',
-          valor_lectura: parseFloat(datos.totalizador), 
+          valor_lectura: parseFloat(datos?.totalizador || "0"), 
           foto_url: fotoUrl,
           observaciones: observaciones,
           usuario_registro: 'Operador Entrada',
@@ -166,7 +174,7 @@ export default function EntradaACP() {
   };
 
   const handleWhatsApp = async () => {
-    if (!datos || !fotoUrl) return;
+    if (!fotoUrl) return;
 
     setLoading(true);
     setStatusText('Guardando y preparando WhatsApp...');
@@ -174,7 +182,7 @@ export default function EntradaACP() {
     try {
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'ENTRADA_ACP',
-          valor_lectura: parseFloat(datos.totalizador), 
+          valor_lectura: parseFloat(datos?.totalizador || "0"), 
           foto_url: fotoUrl,
           observaciones: observaciones,
           usuario_registro: 'Operador Entrada',
@@ -185,7 +193,7 @@ export default function EntradaACP() {
       if (error) throw error;
 
       const msg = `*REPORTE ENTRADA ACP*%0A` +
-                  `*Lectura:* ${datos.totalizador}%0A` +
+                  `*Lectura:* ${datos?.totalizador || 'Manual'}%0A` +
                   `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
                   `*Variedad:* ${variedad}%0A` +
                   `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
@@ -193,10 +201,9 @@ export default function EntradaACP() {
                   `✅ _REGISTRO GUARDADO EN SISTEMA_`;
 
       window.open(`https://wa.me/?text=${msg}`, '_blank');
-      
       resetTodo(); 
     } catch (err: any) { 
-      alert("Error al guardar antes de enviar: " + err.message); 
+      alert("Error al guardar: " + err.message); 
     } finally { 
       setLoading(false); 
       setStatusText('');
@@ -214,18 +221,11 @@ export default function EntradaACP() {
         </header>
 
         <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${(datos || loading) ? 'opacity-40 pointer-events-none' : ''}`}>
-           <select 
-              value={variedad} 
-              onChange={(e) => setVariedad(e.target.value)}
-              className="w-full bg-black border border-white/10 rounded-2xl p-4 text-xs font-bold text-white focus:outline-none"
-            >
+           <select value={variedad} onChange={(e) => setVariedad(e.target.value)} className="w-full bg-black border border-white/10 rounded-2xl p-4 text-xs font-bold text-white focus:outline-none">
               <option value="ALTO OLEICO">ALTO OLEICO</option>
               <option value="GUINENSIS">GUINENSIS</option>
             </select>
-           <button 
-            onClick={() => setEsReproceso(!esReproceso)}
-            className={`w-full p-4 rounded-2xl border flex justify-between items-center ${esReproceso ? 'border-orange-500 bg-orange-500/10' : 'border-white/10 bg-black'}`}
-           >
+           <button onClick={() => setEsReproceso(!esReproceso)} className={`w-full p-4 rounded-2xl border flex justify-between items-center ${esReproceso ? 'border-orange-500 bg-orange-500/10' : 'border-white/10 bg-black'}`}>
              <span className="text-[10px] font-black tracking-widest">{esReproceso ? 'ES REPROCESO ✅' : 'PROCESO NORMAL'}</span>
              <div className={`w-4 h-4 rounded-full ${esReproceso ? 'bg-orange-500' : 'bg-zinc-800'}`}></div>
            </button>
@@ -235,11 +235,6 @@ export default function EntradaACP() {
           <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-blue-900/30">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-blue-500 font-black text-[11px] tracking-widest uppercase mb-4">{statusText}</p>
-            {fotoUrl && (
-              <a href={fotoUrl} target="_blank" className="text-[10px] bg-blue-500/10 text-blue-400 px-4 py-2 rounded-full border border-blue-500/20 font-bold animate-pulse" rel="noreferrer">
-                🔗 VER CAPTURA SUBIDA
-              </a>
-            )}
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
@@ -261,12 +256,7 @@ export default function EntradaACP() {
                 <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase" rel="noreferrer">REVISAR FOTO ORIGINAL</a>
             </div>
             
-            <textarea 
-              value={observaciones} 
-              onChange={(e) => setObservaciones(e.target.value)} 
-              className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" 
-              placeholder="NOTAS ADICIONALES..." 
-            />
+            <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" placeholder="NOTAS ADICIONALES..." />
 
             <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3">
               <span className="text-lg">💬</span>
