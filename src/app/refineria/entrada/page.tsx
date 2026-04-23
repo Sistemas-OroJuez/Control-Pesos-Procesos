@@ -81,7 +81,16 @@ export default function EntradaACP() {
       const blob = await compressImage(file);
       setStatusText('Subiendo Archivo...');
       const fileName = `entrada_acp_${Date.now()}.jpg`;
-      const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, blob);
+
+      // --- CAMBIO 1: Configuración de subida explícita para evitar CORS ---
+      const { error: upErr } = await supabase.storage
+        .from(BUCKET_NAME)
+        .upload(fileName, blob, {
+          contentType: 'image/jpeg',
+          cacheControl: '3600',
+          upsert: true
+        });
+        
       if (upErr) throw upErr;
 
       const { data: { publicUrl } } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
@@ -94,9 +103,11 @@ export default function EntradaACP() {
       formData.append('language', 'eng');
       formData.append('OCREngine', '2'); 
 
+      // --- CAMBIO 2: Añadido modo cors a la petición de OCR ---
       const res = await fetch('https://api.ocr.space/parse/image', {
         method: 'POST',
-        body: formData
+        body: formData,
+        mode: 'cors'
       });
 
       const result = await res.json();
@@ -125,7 +136,8 @@ export default function EntradaACP() {
       });
 
     } catch (err: any) {
-      alert("Error: " + err.message);
+      console.error("Error en proceso:", err);
+      alert("Error: " + (err.message || "Fallo en la conexión"));
     } finally {
       setLoading(false);
       setStatusText('');
@@ -152,7 +164,6 @@ export default function EntradaACP() {
     finally { setLoading(false); }
   };
 
-  // --- FUNCIÓN DE WHATSAPP CON GUARDADO PREVIO ---
   const handleWhatsApp = async () => {
     if (!datos || !fotoUrl) return;
 
@@ -160,7 +171,6 @@ export default function EntradaACP() {
     setStatusText('Guardando y preparando WhatsApp...');
 
     try {
-      // Primero guardamos los datos en la base de datos
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'ENTRADA_ACP',
           valor_lectura: parseFloat(datos.totalizador), 
@@ -173,7 +183,6 @@ export default function EntradaACP() {
 
       if (error) throw error;
 
-      // Si el guardado fue exitoso, abrimos WhatsApp
       const msg = `*REPORTE ENTRADA ACP*%0A` +
                   `*Lectura:* ${datos.totalizador}%0A` +
                   `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
@@ -226,7 +235,7 @@ export default function EntradaACP() {
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
             <p className="text-blue-500 font-black text-[11px] tracking-widest uppercase mb-4">{statusText}</p>
             {fotoUrl && (
-              <a href={fotoUrl} target="_blank" className="text-[10px] bg-blue-500/10 text-blue-400 px-4 py-2 rounded-full border border-blue-500/20 font-bold animate-pulse">
+              <a href={fotoUrl} target="_blank" className="text-[10px] bg-blue-500/10 text-blue-400 px-4 py-2 rounded-full border border-blue-500/20 font-bold animate-pulse" rel="noreferrer">
                 🔗 VER CAPTURA SUBIDA
               </a>
             )}
@@ -248,7 +257,7 @@ export default function EntradaACP() {
                   onChange={(e) => setDatos({...datos, totalizador: e.target.value.replace(/[^0-9]/g, '')})}
                   className="w-full bg-transparent text-6xl font-black text-blue-400 tracking-tighter tabular-nums text-center focus:outline-none"
                 />
-                <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
+                <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase" rel="noreferrer">REVISAR FOTO ORIGINAL</a>
             </div>
             
             <textarea 

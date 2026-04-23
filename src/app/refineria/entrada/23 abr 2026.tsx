@@ -6,7 +6,7 @@ const BUCKET_NAME = 'refineria_assets';
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
 const OCR_API_KEY = 'K82540315988957'; 
 
-export default function IngresoACP() {
+export default function EntradaACP() {
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
   const [datos, setDatos] = useState<any>(null);
@@ -17,9 +17,9 @@ export default function IngresoACP() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA PARA NO PERDER DATOS
+  // PERSISTENCIA
   useEffect(() => {
-    const backup = localStorage.getItem('backup_ingreso_acp');
+    const backup = localStorage.getItem('backup_entrada_acp');
     if (backup) {
       const p = JSON.parse(backup);
       if (p.datos) {
@@ -34,14 +34,14 @@ export default function IngresoACP() {
 
   useEffect(() => {
     if (datos || fotoUrl) {
-      localStorage.setItem('backup_ingreso_acp', JSON.stringify({
+      localStorage.setItem('backup_entrada_acp', JSON.stringify({
         datos, fotoUrl, variedad, esReproceso, observaciones
       }));
     }
   }, [datos, fotoUrl, variedad, esReproceso, observaciones]);
 
   const resetTodo = () => {
-    localStorage.removeItem('backup_ingreso_acp'); 
+    localStorage.removeItem('backup_entrada_acp'); 
     setLoading(false);
     setDatos(null);
     setFotoUrl(null);
@@ -58,13 +58,13 @@ export default function IngresoACP() {
         img.src = e.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1000; 
+          const MAX_WIDTH = 1200; 
           const scale = MAX_WIDTH / img.width;
           canvas.width = MAX_WIDTH;
           canvas.height = img.height * scale;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.8);
+          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.85);
         };
       };
     });
@@ -79,9 +79,8 @@ export default function IngresoACP() {
 
     try {
       const blob = await compressImage(file);
-      
       setStatusText('Subiendo Archivo...');
-      const fileName = `ingreso_${Date.now()}.jpg`;
+      const fileName = `entrada_acp_${Date.now()}.jpg`;
       const { error: upErr } = await supabase.storage.from(BUCKET_NAME).upload(fileName, blob);
       if (upErr) throw upErr;
 
@@ -102,24 +101,26 @@ export default function IngresoACP() {
 
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
+      
+      const lineas = textRaw.split('\n');
+      let valorDetectado = "0";
 
-      // --- LÓGICA DE SALTO DE FILA (SOLUCIÓN AL ERROR DE LECTURA) ---
-      // 1. Separamos por líneas y extraemos solo los bloques numéricos
-      const bloquesNumericos = textRaw.split('\n')
-        .map((l: string) => l.replace(/[^0-9]/g, '')) 
-        .filter((l: string) => l.length >= 7); // Filtramos para tener solo números tipo totalizador/flujo
+      const lineaTotalizador = lineas.find((l: string) => 
+        l.includes('Σ') || l.includes('E1') || l.includes('S1') || l.includes('M1')
+      );
 
-      let valorFinal = "0";
-
-      // 2. Si detectamos 2 o más bloques, el totalizador (Σ1) es SIEMPRE el segundo bloque
-      if (bloquesNumericos.length >= 2) {
-        valorFinal = bloquesNumericos[1]; // Salta la fila 1 y toma la fila 2
-      } else if (bloquesNumericos.length === 1) {
-        valorFinal = bloquesNumericos[0];
+      if (lineaTotalizador) {
+        valorDetectado = lineaTotalizador.replace(/[^0-9]/g, '');
+      } else {
+        const lineasNumericas = lineas
+          .map((l: string) => l.replace(/[^0-9]/g, ''))
+          .filter((l: string) => l.length >= 5);
+        
+        valorDetectado = lineasNumericas.length >= 2 ? lineasNumericas[1] : (lineasNumericas[0] || "0");
       }
 
       setDatos({
-        totalizador: valorFinal,
+        totalizador: valorDetectado,
         status: 'completado'
       });
 
@@ -136,7 +137,7 @@ export default function IngresoACP() {
     setLoading(true);
     try {
       const { error } = await supabase.from('operaciones_refineria').insert([{
-          tipo_operacion: 'INGRESO_ACP',
+          tipo_operacion: 'ENTRADA_ACP',
           valor_lectura: parseFloat(datos.totalizador), 
           foto_url: fotoUrl,
           observaciones: observaciones,
@@ -151,6 +152,47 @@ export default function IngresoACP() {
     finally { setLoading(false); }
   };
 
+  // --- FUNCIÓN DE WHATSAPP CON GUARDADO PREVIO ---
+  const handleWhatsApp = async () => {
+    if (!datos || !fotoUrl) return;
+
+    setLoading(true);
+    setStatusText('Guardando y preparando WhatsApp...');
+
+    try {
+      // Primero guardamos los datos en la base de datos
+      const { error } = await supabase.from('operaciones_refineria').insert([{
+          tipo_operacion: 'ENTRADA_ACP',
+          valor_lectura: parseFloat(datos.totalizador), 
+          foto_url: fotoUrl,
+          observaciones: observaciones,
+          usuario_registro: 'Operador Entrada',
+          variedad: variedad,
+          es_reproceso: esReproceso
+      }]);
+
+      if (error) throw error;
+
+      // Si el guardado fue exitoso, abrimos WhatsApp
+      const msg = `*REPORTE ENTRADA ACP*%0A` +
+                  `*Lectura:* ${datos.totalizador}%0A` +
+                  `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
+                  `*Variedad:* ${variedad}%0A` +
+                  `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
+                  `*Foto:* ${fotoUrl}%0A%0A` +
+                  `✅ _REGISTRO GUARDADO EN SISTEMA_`;
+
+      window.open(`https://wa.me/?text=${msg}`, '_blank');
+      
+      resetTodo(); 
+    } catch (err: any) { 
+      alert("Error al guardar antes de enviar: " + err.message); 
+    } finally { 
+      setLoading(false); 
+      setStatusText('');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-black text-white p-4 font-sans uppercase">
       <div className="max-w-md mx-auto space-y-6">
@@ -158,10 +200,9 @@ export default function IngresoACP() {
           <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-zinc-900 border border-white/10 p-3 rounded-2xl">
             <span className="text-[10px] font-black text-zinc-400">VOLVER</span>
           </button>
-          <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">REFINERÍA OROJUEZ</h1>
+          <h1 className="flex-1 text-blue-500 font-black text-[10px] tracking-[0.3em] text-center">ENTRADA ACP OROJUEZ</h1>
         </header>
 
-        {/* SELECTORES BLOQUEADOS DURANTE PROCESO */}
         <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${(datos || loading) ? 'opacity-40 pointer-events-none' : ''}`}>
            <select 
               value={variedad} 
@@ -195,13 +236,18 @@ export default function IngresoACP() {
             <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl">
               <span className="text-4xl">📸</span>
             </button>
-            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">CAPTURAR INGRESO</p>
+            <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">CAPTURAR ENTRADA ACP</p>
           </div>
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
                 <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
-                <p className="text-6xl font-black text-blue-400 tracking-tighter tabular-nums">{datos.totalizador}</p>
+                <input 
+                  type="text"
+                  value={datos.totalizador}
+                  onChange={(e) => setDatos({...datos, totalizador: e.target.value.replace(/[^0-9]/g, '')})}
+                  className="w-full bg-transparent text-6xl font-black text-blue-400 tracking-tighter tabular-nums text-center focus:outline-none"
+                />
                 <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
             
@@ -211,6 +257,11 @@ export default function IngresoACP() {
               className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" 
               placeholder="NOTAS ADICIONALES..." 
             />
+
+            <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3">
+              <span className="text-lg">💬</span>
+              <span className="text-[10px] font-black text-emerald-400">ENVIAR REPORTE Y GUARDAR</span>
+            </button>
             
             <div className="grid grid-cols-2 gap-3">
                 <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400">REINTENTAR</button>
