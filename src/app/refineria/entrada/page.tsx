@@ -80,12 +80,14 @@ export default function EntradaACP() {
     try {
       const blob = await compressImage(file);
       setStatusText('Subiendo Archivo...');
+      
+      // --- ARREGLO TÉCNICO: Convertir Blob a File real para asegurar compatibilidad ---
       const fileName = `entrada_acp_${Date.now()}.jpg`;
+      const finalFile = new File([blob], fileName, { type: 'image/jpeg' });
 
-      // --- CORRECCIÓN TÉCNICA: Se fuerza el contentType para evitar el rechazo del servidor ---
       const { error: upErr } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(fileName, blob, {
+        .upload(fileName, finalFile, {
           contentType: 'image/jpeg',
           cacheControl: '3600',
           upsert: true
@@ -103,7 +105,6 @@ export default function EntradaACP() {
       formData.append('language', 'eng');
       formData.append('OCREngine', '2'); 
 
-      // Petición al OCR
       const res = await fetch('https://api.ocr.space/parse/image', {
         method: 'POST',
         body: formData,
@@ -137,8 +138,7 @@ export default function EntradaACP() {
 
     } catch (err: any) {
       console.error("Error en proceso:", err);
-      // Mensaje de alerta más descriptivo para depurar
-      alert("Error de Conexión: " + (err.message || "No se pudo subir la foto"));
+      alert("Error de Conexión: " + (err.message || "No se pudo procesar la imagen"));
     } finally {
       setLoading(false);
       setStatusText('');
