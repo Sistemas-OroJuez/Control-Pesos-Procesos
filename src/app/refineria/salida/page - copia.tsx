@@ -152,15 +152,42 @@ export default function SalidaRBD() {
     finally { setLoading(false); }
   };
 
-  const handleWhatsApp = () => {
+  const handleWhatsApp = async () => {
     if (!datos || !fotoUrl) return;
-    const msg = `*REPORTE SALIDA RBD*%0A` +
-                `*Lectura:* ${datos.totalizador}%0A` +
-                `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
-                `*Variedad:* ${variedad}%0A` +
-                `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
-                `*Foto:* ${fotoUrl}`;
-    window.open(`https://wa.me/?text=${msg}`, '_blank');
+
+    setLoading(true);
+    setStatusText('Guardando y preparando WhatsApp...');
+
+    try {
+      const { error } = await supabase.from('operaciones_refineria').insert([{
+          tipo_operacion: 'SALIDA_RBD',
+          valor_lectura: parseFloat(datos.totalizador), 
+          foto_url: fotoUrl,
+          observaciones: observaciones,
+          usuario_registro: 'Operador Salida',
+          variedad: variedad,
+          es_reproceso: esReproceso
+      }]);
+
+      if (error) throw error;
+
+      const msg = `*REPORTE SALIDA RBD*%0A` +
+                  `*Lectura:* ${datos.totalizador}%0A` +
+                  `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
+                  `*Variedad:* ${variedad}%0A` +
+                  `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
+                  `*Foto:* ${fotoUrl}%0A%0A` +
+                  `✅ _REGISTRO GUARDADO EN SISTEMA_`;
+
+      window.open(`https://wa.me/?text=${msg}`, '_blank');
+      
+      resetTodo(); 
+    } catch (err: any) { 
+      alert("Error al guardar antes de enviar: " + err.message); 
+    } finally { 
+      setLoading(false); 
+      setStatusText('');
+    }
   };
 
   return (
@@ -184,10 +211,10 @@ export default function SalidaRBD() {
             </select>
            <button 
             onClick={() => setEsReproceso(!esReproceso)}
-            className={`w-full p-4 rounded-2xl border flex justify-between items-center ${esReproceso ? 'border-orange-500 bg-orange-500/10' : 'border-white/10 bg-black'}`}
+            className={`w-full p-4 rounded-2xl border flex justify-between items-center ${esReproceso ? 'border-emerald-500 bg-emerald-500/10' : 'border-white/10 bg-black'}`}
            >
              <span className="text-[10px] font-black tracking-widest">{esReproceso ? 'ES REPROCESO ✅' : 'PROCESO NORMAL'}</span>
-             <div className={`w-4 h-4 rounded-full ${esReproceso ? 'bg-orange-500' : 'bg-zinc-800'}`}></div>
+             <div className={`w-4 h-4 rounded-full ${esReproceso ? 'bg-emerald-500' : 'bg-zinc-800'}`}></div>
            </button>
         </div>
 
@@ -203,7 +230,7 @@ export default function SalidaRBD() {
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
-            <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-emerald-600 flex items-center justify-center shadow-2xl">
+            <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-emerald-600 flex items-center justify-center shadow-2xl shadow-emerald-900/40">
               <span className="text-4xl">📸</span>
             </button>
             <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">CAPTURAR SALIDA RBD</p>
@@ -211,14 +238,14 @@ export default function SalidaRBD() {
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
-                <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ1)</p>
+                <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR SALIDA (Σ)</p>
                 <input 
                   type="text"
                   value={datos.totalizador}
                   onChange={(e) => setDatos({...datos, totalizador: e.target.value.replace(/[^0-9]/g, '')})}
                   className="w-full bg-transparent text-6xl font-black text-emerald-400 tracking-tighter tabular-nums text-center focus:outline-none"
                 />
-                <a href={fotoUrl!} target="_blank" className="text-[10px] text-emerald-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
+                <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
             
             <textarea 
@@ -228,14 +255,14 @@ export default function SalidaRBD() {
               placeholder="NOTAS ADICIONALES..." 
             />
 
-            <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3">
+            <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all">
               <span className="text-lg">💬</span>
-              <span className="text-[10px] font-black text-emerald-400">ENVIAR REPORTE POR WHATSAPP</span>
+              <span className="text-[10px] font-black text-white">ENVIAR REPORTE Y GUARDAR</span>
             </button>
             
             <div className="grid grid-cols-2 gap-3">
                 <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400">REINTENTAR</button>
-                <button onClick={handleConfirmarYGuardar} className="py-5 bg-emerald-600 rounded-2xl font-black text-[9px]">CONFIRMAR</button>
+                <button onClick={handleConfirmarYGuardar} className="py-5 bg-emerald-800 rounded-2xl font-black text-[9px]">CONFIRMAR</button>
             </div>
           </div>
         )}

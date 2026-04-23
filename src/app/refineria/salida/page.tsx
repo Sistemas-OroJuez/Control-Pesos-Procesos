@@ -2,9 +2,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
-const BUCKET_NAME = 'refineria_assets'; 
+const BUCKET_NAME = 'fotos_refineria'; 
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
-const OCR_API_KEY = 'K82540315988957'; 
 
 export default function SalidaRBD() {
   const [loading, setLoading] = useState(false);
@@ -17,7 +16,7 @@ export default function SalidaRBD() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA
+  // PERSISTENCIA (Usa una clave diferente a la de entrada para no mezclar)
   useEffect(() => {
     const backup = localStorage.getItem('backup_salida_rbd');
     if (backup) {
@@ -88,16 +87,14 @@ export default function SalidaRBD() {
       setFotoUrl(publicUrl);
 
       setStatusText('Analizando con IA...');
-      const formData = new FormData();
-      formData.append('apikey', OCR_API_KEY);
-      formData.append('url', publicUrl);
-      formData.append('language', 'eng');
-      formData.append('OCREngine', '2'); 
-
-      const res = await fetch('https://api.ocr.space/parse/image', {
+      
+      const res = await fetch('/api/ocr', {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: publicUrl }) 
       });
+
+      if (!res.ok) throw new Error("Error en la respuesta del servidor OCR");
 
       const result = await res.json();
       const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
@@ -105,6 +102,7 @@ export default function SalidaRBD() {
       const lineas = textRaw.split('\n');
       let valorDetectado = "0";
 
+      // Lógica de detección igual a la de entrada para mantener consistencia
       const lineaTotalizador = lineas.find((l: string) => 
         l.includes('Σ') || l.includes('E1') || l.includes('S1') || l.includes('M1')
       );
@@ -146,7 +144,7 @@ export default function SalidaRBD() {
           es_reproceso: esReproceso
       }]);
       if (error) throw error;
-      alert("✅ REGISTRO EXITOSO");
+      alert("✅ REGISTRO SALIDA RBD EXITOSO");
       resetTodo(); 
     } catch (err: any) { alert(err.message); }
     finally { setLoading(false); }
@@ -183,7 +181,7 @@ export default function SalidaRBD() {
       
       resetTodo(); 
     } catch (err: any) { 
-      alert("Error al guardar antes de enviar: " + err.message); 
+      alert("Error al guardar: " + err.message); 
     } finally { 
       setLoading(false); 
       setStatusText('');
@@ -197,7 +195,7 @@ export default function SalidaRBD() {
           <button onClick={() => window.location.href = DASHBOARD_URL} className="bg-zinc-900 border border-white/10 p-3 rounded-2xl">
             <span className="text-[10px] font-black text-zinc-400">VOLVER</span>
           </button>
-          <h1 className="flex-1 text-emerald-500 font-black text-[10px] tracking-[0.3em] text-center">SALIDA RBD OROJUEZ</h1>
+          <h1 className="flex-1 text-amber-500 font-black text-[10px] tracking-[0.3em] text-center">SALIDA RBD OROJUEZ</h1>
         </header>
 
         <div className={`bg-zinc-900 p-6 rounded-[30px] border border-white/5 space-y-4 ${(datos || loading) ? 'opacity-40 pointer-events-none' : ''}`}>
@@ -211,26 +209,21 @@ export default function SalidaRBD() {
             </select>
            <button 
             onClick={() => setEsReproceso(!esReproceso)}
-            className={`w-full p-4 rounded-2xl border flex justify-between items-center ${esReproceso ? 'border-emerald-500 bg-emerald-500/10' : 'border-white/10 bg-black'}`}
+            className={`w-full p-4 rounded-2xl border flex justify-between items-center ${esReproceso ? 'border-orange-500 bg-orange-500/10' : 'border-white/10 bg-black'}`}
            >
              <span className="text-[10px] font-black tracking-widest">{esReproceso ? 'ES REPROCESO ✅' : 'PROCESO NORMAL'}</span>
-             <div className={`w-4 h-4 rounded-full ${esReproceso ? 'bg-emerald-500' : 'bg-zinc-800'}`}></div>
+             <div className={`w-4 h-4 rounded-full ${esReproceso ? 'bg-orange-500' : 'bg-zinc-800'}`}></div>
            </button>
         </div>
 
         {loading ? (
-          <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-emerald-900/30">
-            <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-            <p className="text-emerald-500 font-black text-[11px] tracking-widest uppercase mb-4">{statusText}</p>
-            {fotoUrl && (
-              <a href={fotoUrl} target="_blank" className="text-[10px] bg-emerald-500/10 text-emerald-400 px-4 py-2 rounded-full border border-emerald-500/20 font-bold animate-pulse">
-                🔗 VER CAPTURA SUBIDA
-              </a>
-            )}
+          <div className="flex flex-col items-center p-10 bg-zinc-900/40 rounded-[40px] border-2 border-amber-900/30">
+            <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+            <p className="text-amber-500 font-black text-[11px] tracking-widest uppercase mb-4">{statusText}</p>
           </div>
         ) : !datos ? (
           <div className="flex flex-col items-center border-2 border-dashed border-zinc-800 rounded-[40px] p-10 bg-zinc-900/20">
-            <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-emerald-600 flex items-center justify-center shadow-2xl shadow-emerald-900/40">
+            <button onClick={() => fileInputRef.current?.click()} className="w-32 h-32 rounded-full bg-amber-600 flex items-center justify-center shadow-2xl shadow-amber-900/20">
               <span className="text-4xl">📸</span>
             </button>
             <p className="mt-8 text-zinc-600 text-[11px] font-black tracking-widest uppercase">CAPTURAR SALIDA RBD</p>
@@ -238,31 +231,31 @@ export default function SalidaRBD() {
         ) : (
           <div className="bg-zinc-900 rounded-[40px] p-8 border border-white/5 space-y-6 animate-in zoom-in">
             <div className="text-center py-4 border-b border-white/5">
-                <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR SALIDA (Σ)</p>
+                <p className="text-[11px] text-zinc-500 font-black tracking-[.2em]">TOTALIZADOR (Σ2)</p>
                 <input 
                   type="text"
                   value={datos.totalizador}
                   onChange={(e) => setDatos({...datos, totalizador: e.target.value.replace(/[^0-9]/g, '')})}
-                  className="w-full bg-transparent text-6xl font-black text-emerald-400 tracking-tighter tabular-nums text-center focus:outline-none"
+                  className="w-full bg-transparent text-6xl font-black text-amber-400 tracking-tighter tabular-nums text-center focus:outline-none"
                 />
-                <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
+                <a href={fotoUrl!} target="_blank" className="text-[10px] text-amber-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
             
             <textarea 
               value={observaciones} 
               onChange={(e) => setObservaciones(e.target.value)} 
               className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" 
-              placeholder="NOTAS ADICIONALES..." 
+              placeholder="NOTAS ADICIONALES SOBRE SALIDA..." 
             />
 
-            <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all">
+            <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3">
               <span className="text-lg">💬</span>
-              <span className="text-[10px] font-black text-white">ENVIAR REPORTE Y GUARDAR</span>
+              <span className="text-[10px] font-black text-emerald-400">ENVIAR REPORTE Y GUARDAR</span>
             </button>
             
             <div className="grid grid-cols-2 gap-3">
                 <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400">REINTENTAR</button>
-                <button onClick={handleConfirmarYGuardar} className="py-5 bg-emerald-800 rounded-2xl font-black text-[9px]">CONFIRMAR</button>
+                <button onClick={handleConfirmarYGuardar} className="py-5 bg-amber-600 rounded-2xl font-black text-[9px]">CONFIRMAR</button>
             </div>
           </div>
         )}
