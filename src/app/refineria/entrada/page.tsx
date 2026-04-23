@@ -4,7 +4,6 @@ import { supabase } from '@/lib/supabase';
 
 const BUCKET_NAME = 'fotos_refineria'; 
 const DASHBOARD_URL = "https://produccionorj23.vercel.app/dashboard";
-const OCR_API_KEY = 'K82540315988957'; 
 
 export default function EntradaACP() {
   const [loading, setLoading] = useState(false);
@@ -58,7 +57,7 @@ export default function EntradaACP() {
         img.src = e.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1000; // Reducimos ligeramente para mayor velocidad
+          const MAX_WIDTH = 1000; 
           const scale = MAX_WIDTH / img.width;
           canvas.width = MAX_WIDTH;
           canvas.height = img.height * scale;
@@ -80,7 +79,7 @@ export default function EntradaACP() {
     try {
       const blob = await compressImage(file);
       
-      // 1. CONVERTIR BLOB A BASE64 PARA EL OCR (Evita el bloqueo CORS)
+      // 1. CONVERTIR A BASE64 PARA ENVÍO DIRECTO
       const reader = new FileReader();
       const base64Promise = new Promise((resolve) => {
         reader.onloadend = () => resolve(reader.result);
@@ -94,10 +93,7 @@ export default function EntradaACP() {
 
       const { error: upErr } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(fileName, finalFile, {
-          contentType: 'image/jpeg',
-          upsert: true
-        });
+        .upload(fileName, finalFile, { contentType: 'image/jpeg', upsert: true });
         
       if (upErr) throw upErr;
 
@@ -106,47 +102,36 @@ export default function EntradaACP() {
 
       setStatusText('Analizando con IA...');
       
-      // 2. PETICIÓN OCR USANDO EL BASE64 EN LUGAR DE LA URL
-      const formData = new FormData();
-      formData.append('apikey', OCR_API_KEY);
-      formData.append('base64Image', base64Image); 
-      formData.append('language', 'eng');
-      formData.append('OCREngine', '2'); 
-
-      const res = await fetch('https://api.ocr.space/parse/image', {
+      // 2. LLAMADA A TU PROPIO SERVIDOR (route.ts con Tesseract)
+      const res = await fetch('/api/ocr', {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          image: base64Image,
+          fotoUrl: publicUrl 
+        })
       });
 
       const result = await res.json();
       
-      if (result.IsErroredOnProcessing) throw new Error(result.ErrorMessage);
+      if (result.error) throw new Error(result.error);
 
-      const textRaw = result.ParsedResults?.[0]?.ParsedText || "";
-      const lineas = textRaw.split('\n');
-      let valorDetectado = "0";
+      // Usamos el valorPrincipal que devuelve tu Tesseract configurado
+      const valorLimpio = result.valorPrincipal ? result.valorPrincipal.toString() : "0";
 
-      const lineaTotalizador = lineas.find((l: string) => 
-        l.includes('Σ') || l.includes('E1') || l.includes('S1') || l.includes('M1')
-      );
+      setDatos({ 
+        totalizador: valorLimpio, 
+        status: valorLimpio === "0" ? 'manual' : 'completado' 
+      });
 
-      if (lineaTotalizador) {
-        valorDetectado = lineaTotalizador.replace(/[^0-9]/g, '');
-      } else {
-        const lineasNumericas = lineas
-          .map((l: string) => l.replace(/[^0-9]/g, ''))
-          .filter((l: string) => l.length >= 5);
-        valorDetectado = lineasNumericas.length >= 2 ? lineasNumericas[1] : (lineasNumericas[0] || "0");
+      if (valorLimpio === "0") {
+        alert("La IA no detectó el número. Por favor, ingrésalo manualmente.");
       }
-
-      setDatos({ totalizador: valorDetectado, status: 'completado' });
 
     } catch (err: any) {
       console.error("Error en proceso:", err);
-      // MODO FALLO SEGURO: Si la IA falla por CORS, permitimos digitar manual
-      // La foto ya está en Supabase en este punto.
       setDatos({ totalizador: "0", status: 'manual' });
-      alert("Aviso: El análisis automático fue bloqueado por la red. La foto se guardó, por favor ingresa el valor manualmente.");
+      alert("Aviso: El análisis automático falló. La foto se guardó, por favor ingresa el valor manualmente.");
     } finally {
       setLoading(false);
       setStatusText('');
@@ -154,7 +139,7 @@ export default function EntradaACP() {
   };
 
   const handleConfirmarYGuardar = async () => {
-    if (!fotoUrl) return; // Permitimos avanzar si hay foto
+    if (!fotoUrl) return; 
     setLoading(true);
     try {
       const { error } = await supabase.from('operaciones_refineria').insert([{

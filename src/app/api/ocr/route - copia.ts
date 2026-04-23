@@ -1,49 +1,58 @@
 import { NextResponse } from 'next/server';
-import { ImageAnnotatorClient } from '@google-cloud/vision';
+import { createWorker } from 'tesseract.js';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
-  const VERSION = "OPERACION_BASE64_V13"; 
-
+  let worker;
   try {
     const { fotoUrl } = await request.json();
-    let keyRaw = process.env.NEXT_PUBLIC_GCP_KEY || "";
+    if (!fotoUrl) throw new Error("No hay imagen");
 
-    if (!keyRaw) throw new Error("Variable NEXT_PUBLIC_GCP_KEY vacía");
+    worker = await createWorker('eng', 1);
 
-    // Si la llave no parece un JSON (no empieza con {), es Base64 y la decodificamos
-    if (!keyRaw.trim().startsWith('{')) {
-      keyRaw = Buffer.from(keyRaw, 'base64').toString('utf-8');
-    }
+    // Permitimos números, puntos y letras clave para las unidades
+    await worker.setParameters({
+      tessedit_char_whitelist: '0123456789.kghCl',
+    });
 
-    const credentials = JSON.parse(keyRaw);
+    const { data: { text } } = await worker.recognize(fotoUrl);
+    console.log("Texto detectado:", text);
 
-    // Limpieza de seguridad por si acaso
-    if (credentials.private_key) {
-      credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
-    }
+    // --- EXTRACCIÓN CON PATRONES ESPECÍFICOS ---
 
-    const client = new ImageAnnotatorClient({ credentials });
+    // 1. Masa (ṁ): Busca números con punto antes de 'kg/h'
+    const masaMatch = text.match(/(\d+\.\d+)\s*kg\/h/i);
+    const masa = masaMatch ? parseFloat(masaMatch[1]) : 0;
 
-    const [result] = await client.textDetection(fotoUrl);
-    if (result.error) throw new Error(`Google Cloud: ${result.error.message}`);
-
-    const text = result.textAnnotations?.[0]?.description || '';
+    // 2. Sumatoria (Σ1): Busca 7 u 8 dígitos exactos. 
+    // Usamos parseInt para asegurar que sea un número entero y evitar decimales falsos.
     const sumatoriaMatch = text.match(/(\d{7,8})/);
-    const sumatoria = sumatoriaMatch ? parseFloat(sumatoriaMatch[1]) : 0;
+    const sumatoria = sumatoriaMatch ? parseInt(sumatoriaMatch[1], 10) : 0;
+
+    // 3. Temperatura (🌡): Busca números con punto antes de '°C' (o 'C' si el símbolo falla)
+    const tempMatch = text.match(/(\d+\.\d+)\s*C/i);
+    const temp = tempMatch ? parseFloat(tempMatch[1]) : 0;
+
+    // 4. Densidad (ρ): Busca números (normalmente iniciando con 0.) antes de 'kg/l'
+    const densMatch = text.match(/(\d+\.\d+)\s*kg\/l/i);
+    const densidad = densMatch ? parseFloat(densMatch[1]) : 0;
+
+    await worker.terminate();
 
     return NextResponse.json({
       valorPrincipal: sumatoria,
+      metadatosAdicionales: {
+        masa_kg_h: masa,
+        temperatura_c: temp,
+        densidad_kg_l: densidad
+      },
       textoCompleto: text,
-      version_test: VERSION
+      version_test: "TESSERACT_FULL_SYNC_V2"
     });
 
   } catch (error: any) {
-    return NextResponse.json({ 
-      error: "FALLO_AUTENTICACION_TOTAL", 
-      debug: error.message,
-      version_test: VERSION 
-    }, { status: 500 });
+    if (worker) await worker.terminate();
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
