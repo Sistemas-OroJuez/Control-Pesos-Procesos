@@ -16,7 +16,7 @@ export default function EntradaACP() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA (Tu lógica intacta)
+  // PERSISTENCIA
   useEffect(() => {
     const backup = localStorage.getItem('backup_entrada_acp');
     if (backup) {
@@ -57,13 +57,14 @@ export default function EntradaACP() {
         img.src = e.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1200; 
+          // OPTIMIZACIÓN: 800px es el punto dulce para velocidad de IA
+          const MAX_WIDTH = 800; 
           const scale = MAX_WIDTH / img.width;
           canvas.width = MAX_WIDTH;
           canvas.height = img.height * scale;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.85);
+          canvas.toBlob((blob) => resolve(blob as Blob), 'image/jpeg', 0.7);
         };
       };
     });
@@ -79,7 +80,7 @@ export default function EntradaACP() {
     try {
       const blob = await compressImage(file);
       
-      // Convertimos a Base64 para pasar al servidor
+      // Convertir a Base64 para enviar rápido a la IA interna
       const reader = new FileReader();
       const base64Promise = new Promise((resolve) => {
         reader.onloadend = () => resolve(reader.result);
@@ -97,19 +98,16 @@ export default function EntradaACP() {
 
       setStatusText('Analizando con IA...');
       
-      // CAMBIO CLAVE: Llamamos a tu ruta interna que tiene el Tesseract calibrado
+      // LLAMADA A TU PROPIO /api/ocr (Tesseract en Servidor)
       const res = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          image: base64Image,
-          fotoUrl: publicUrl 
-        })
+        body: JSON.stringify({ image: base64Image })
       });
 
       const result = await res.json();
       
-      // Si el servidor devolvió el valorPrincipal (la sumatoria)
+      // Usamos el valorPrincipal que devuelve tu lógica de route.ts
       const valorDetectado = result.valorPrincipal ? result.valorPrincipal.toString() : "0";
 
       setDatos({
@@ -118,13 +116,13 @@ export default function EntradaACP() {
       });
 
       if (valorDetectado === "0") {
-        alert("La IA no detectó el número. Por favor ingresa el valor manual.");
+        alert("Aviso: La IA no pudo leer el número. Por favor ingrésalo manualmente.");
       }
 
     } catch (err: any) {
-      console.error("Error:", err);
+      console.error("Error OCR:", err);
       setDatos({ totalizador: "0", status: 'manual' });
-      alert("Error de red. La foto se guardó, ingresa el valor manualmente.");
+      alert("Error en el análisis. La foto se guardó, ingresa el valor a mano.");
     } finally {
       setLoading(false);
       setStatusText('');
@@ -177,8 +175,12 @@ export default function EntradaACP() {
 
       window.open(`https://wa.me/?text=${msg}`, '_blank');
       resetTodo(); 
-    } catch (err: any) { alert("Error al guardar: " + err.message); }
-    finally { setLoading(false); setStatusText(''); }
+    } catch (err: any) { 
+      alert("Error al guardar: " + err.message); 
+    } finally { 
+      setLoading(false); 
+      setStatusText('');
+    }
   };
 
   return (
@@ -226,11 +228,14 @@ export default function EntradaACP() {
                 />
                 <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase" rel="noreferrer">REVISAR FOTO ORIGINAL</a>
             </div>
+            
             <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} className="w-full bg-black/40 rounded-2xl p-4 text-[10px] text-white border border-white/5" placeholder="NOTAS ADICIONALES..." />
+
             <button onClick={handleWhatsApp} className="w-full py-4 bg-emerald-600/20 border border-emerald-500/30 rounded-2xl flex items-center justify-center gap-3">
               <span className="text-lg">💬</span>
               <span className="text-[10px] font-black text-emerald-400">ENVIAR REPORTE Y GUARDAR</span>
             </button>
+            
             <div className="grid grid-cols-2 gap-3">
                 <button onClick={resetTodo} className="py-5 bg-zinc-800 rounded-2xl font-black text-[9px] text-red-400">REINTENTAR</button>
                 <button onClick={handleConfirmarYGuardar} className="py-5 bg-blue-600 rounded-2xl font-black text-[9px]">CONFIRMAR</button>
