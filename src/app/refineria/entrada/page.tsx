@@ -82,7 +82,7 @@ export default function EntradaACP() {
       setStatusText('Subiendo Archivo...');
       const fileName = `entrada_acp_${Date.now()}.jpg`;
 
-      // --- CAMBIO 1: Configuración de subida explícita para evitar CORS ---
+      // --- CORRECCIÓN TÉCNICA: Se fuerza el contentType para evitar el rechazo del servidor ---
       const { error: upErr } = await supabase.storage
         .from(BUCKET_NAME)
         .upload(fileName, blob, {
@@ -103,7 +103,7 @@ export default function EntradaACP() {
       formData.append('language', 'eng');
       formData.append('OCREngine', '2'); 
 
-      // --- CAMBIO 2: Añadido modo cors a la petición de OCR ---
+      // Petición al OCR
       const res = await fetch('https://api.ocr.space/parse/image', {
         method: 'POST',
         body: formData,
@@ -137,7 +137,8 @@ export default function EntradaACP() {
 
     } catch (err: any) {
       console.error("Error en proceso:", err);
-      alert("Error: " + (err.message || "Fallo en la conexión"));
+      // Mensaje de alerta más descriptivo para depurar
+      alert("Error de Conexión: " + (err.message || "No se pudo subir la foto"));
     } finally {
       setLoading(false);
       setStatusText('');
