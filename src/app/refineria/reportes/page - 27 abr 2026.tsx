@@ -21,17 +21,13 @@ export default function ReporteFinalAuditoria() {
 
   const fetchAuditoria = async () => {
     setLoading(true);
-    
-    // CAMBIO CRITICO 1: Traemos los datos SIN filtrar por variedad todavía para tener la secuencia real
     const { data: todos, error } = await supabase
       .from('operaciones_refineria')
       .select('*')
       .order('created_at', { ascending: true });
 
     if (!error && todos) {
-      // CAMBIO CRITICO 2: El cálculo se hace sobre la lista completa 'todos'
       const procesados = todos.map((reg, index) => {
-        // Buscamos el anterior real en el tiempo para ese tipo de operación, sin importar la variedad
         const anterior = todos.slice(0, index).reverse().find(r => 
           r.tipo_operacion === reg.tipo_operacion && 
           (reg.tipo_operacion === 'ACIDO_GRASO' ? r.tanque_id === reg.tanque_id : true)
@@ -63,16 +59,13 @@ export default function ReporteFinalAuditoria() {
         };
       });
       
-      // CAMBIO CRITICO 3: Ahora SI filtramos lo que el usuario quiere ver en pantalla
-      const filtrados = procesados.filter(r => {
+      setRegistros(procesados.filter(r => {
         const f = r.created_at.split('T')[0];
         const cumpleFecha = f >= fechaInicio && f <= fechaFin;
         const cumpleVariedad = filtroVariedad === 'TODOS' || r.variedad === filtroVariedad;
         const cumpleOperacion = filtroOperacion === 'TODOS' || r.tipo_operacion === filtroOperacion;
         return cumpleFecha && cumpleVariedad && cumpleOperacion;
-      });
-
-      setRegistros(filtrados.reverse()); 
+      }).reverse()); 
     }
     setLoading(false);
   };
@@ -100,26 +93,35 @@ export default function ReporteFinalAuditoria() {
   const exportarPDF = () => {
     if (registros.length === 0) return alert("No hay datos");
     const doc = new jsPDF();
+    
+    // Título Principal
     doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
     doc.text("REPORTE DE AUDITORÍA REFINERÍA", 14, 15);
+    
+    // Gran Total Superior
     const granTotal = registros.reduce((acc, curr) => acc + curr.kgResultantes, 0);
     doc.setFillColor(240, 240, 240);
     doc.rect(14, 20, 182, 10, 'F');
     doc.setFontSize(11);
     doc.setTextColor(0, 100, 0);
     doc.text(`GRAN TOTAL PRODUCCIÓN PERIODO: ${granTotal.toLocaleString()} KG`, 18, 27);
+    
     doc.setFontSize(9);
     doc.setTextColor(100);
     doc.text(`Periodo: ${fechaInicio} al ${fechaFin}`, 14, 35);
+
     const ops = Array.from(new Set(registros.map(r => r.tipo_operacion)));
     let currentY = 40;
+
     ops.forEach(op => {
       const regsOp = registros.filter(r => r.tipo_operacion === op);
       const variedades = Array.from(new Set(regsOp.map(r => r.variedad)));
+
       variedades.forEach(varName => {
         const items = regsOp.filter(r => r.variedad === varName);
         const subtotalVar = items.reduce((acc, curr) => acc + curr.kgResultantes, 0);
+
         autoTable(doc, {
           startY: currentY,
           head: [
@@ -135,6 +137,7 @@ export default function ReporteFinalAuditoria() {
               r.egresosTotales.toLocaleString(),
               r.kgResultantes.toLocaleString()
             ]),
+            // Fila de subtotal por variedad
             [{ content: `SUBTOTAL ${varName}:`, colSpan: 5, styles: { halign: 'right', fontStyle: 'bold', fillColor: [245, 245, 245] } }, 
              { content: `${subtotalVar.toLocaleString()} KG`, styles: { fontStyle: 'bold', fillColor: [245, 245, 245] } }]
           ],
@@ -146,6 +149,7 @@ export default function ReporteFinalAuditoria() {
         currentY = (doc as any).lastAutoTable.finalY + 8;
       });
     });
+
     doc.save(`Auditoria_Refineria_${fechaInicio}.pdf`);
   };
 
