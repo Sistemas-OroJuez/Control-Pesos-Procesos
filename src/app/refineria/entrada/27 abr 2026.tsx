@@ -69,31 +69,6 @@ export default function EntradaACP() {
     });
   };
 
-  // --- LÓGICA DE CIERRE ESPEJO AUTOMÁTICO ---
-  const aplicarCierreAutomaticoSiCambioVariedad = async (nuevaVariedad: string, nuevaLectura: number, nuevaFoto: string) => {
-    const { data: ultimo, error } = await supabase
-      .from('operaciones_refineria')
-      .select('variedad, es_reproceso')
-      .eq('tipo_operacion', 'ENTRADA_ACP')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    if (error || !ultimo) return; 
-
-    if (ultimo.variedad !== nuevaVariedad) {
-      await supabase.from('operaciones_refineria').insert([{
-        tipo_operacion: 'ENTRADA_ACP',
-        valor_lectura: nuevaLectura,
-        foto_url: nuevaFoto,
-        observaciones: `CIERRE AUTOMÁTICO POR CAMBIO A ${nuevaVariedad}`,
-        usuario_registro: 'Sistema (Auto-Cierre)',
-        variedad: ultimo.variedad,
-        es_reproceso: ultimo.es_reproceso
-      }]);
-    }
-  };
-
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -113,6 +88,7 @@ export default function EntradaACP() {
 
       setStatusText('Analizando con IA...');
       
+      // --- CAMBIO CLAVE: LLAMADA AL PROXY INTERNO ---
       const res = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -158,14 +134,9 @@ export default function EntradaACP() {
     if (!datos || !fotoUrl) return;
     setLoading(true);
     try {
-      const lecturaNum = parseFloat(datos.totalizador);
-
-      // Ejecutar cierre espejo si es necesario
-      await aplicarCierreAutomaticoSiCambioVariedad(variedad, lecturaNum, fotoUrl);
-
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'ENTRADA_ACP',
-          valor_lectura: lecturaNum, 
+          valor_lectura: parseFloat(datos.totalizador), 
           foto_url: fotoUrl,
           observaciones: observaciones,
           usuario_registro: 'Operador Entrada',
@@ -186,14 +157,9 @@ export default function EntradaACP() {
     setStatusText('Guardando y preparando WhatsApp...');
 
     try {
-      const lecturaNum = parseFloat(datos.totalizador);
-
-      // Ejecutar cierre espejo si es necesario
-      await aplicarCierreAutomaticoSiCambioVariedad(variedad, lecturaNum, fotoUrl);
-
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'ENTRADA_ACP',
-          valor_lectura: lecturaNum, 
+          valor_lectura: parseFloat(datos.totalizador), 
           foto_url: fotoUrl,
           observaciones: observaciones,
           usuario_registro: 'Operador Entrada',
@@ -272,7 +238,7 @@ export default function EntradaACP() {
                   onChange={(e) => setDatos({...datos, totalizador: e.target.value.replace(/[^0-9]/g, '')})}
                   className="w-full bg-transparent text-6xl font-black text-blue-400 tracking-tighter tabular-nums text-center focus:outline-none"
                 />
-                <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase text-center">REVISAR FOTO ORIGINAL</a>
+                <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
             
             <textarea 
