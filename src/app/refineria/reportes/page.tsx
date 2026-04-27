@@ -22,16 +22,17 @@ export default function ReporteFinalAuditoria() {
   const fetchAuditoria = async () => {
     setLoading(true);
     
-    // CAMBIO CRITICO 1: Traemos los datos SIN filtrar por variedad todavía para tener la secuencia real
+    // CAMBIO CRÍTICO 1: Traemos la línea de tiempo COMPLETA de la base de datos.
+    // No filtramos por variedad aquí, porque si lo hacemos, el cálculo de "lectura anterior" se rompe.
     const { data: todos, error } = await supabase
       .from('operaciones_refineria')
       .select('*')
       .order('created_at', { ascending: true });
 
     if (!error && todos) {
-      // CAMBIO CRITICO 2: El cálculo se hace sobre la lista completa 'todos'
+      // CAMBIO CRÍTICO 2: Procesamos los KG sobre la lista total 'todos' para que cada registro
+      // encuentre su "padre" (lectura anterior) correctamente sin importar el filtro visual.
       const procesados = todos.map((reg, index) => {
-        // Buscamos el anterior real en el tiempo para ese tipo de operación, sin importar la variedad
         const anterior = todos.slice(0, index).reverse().find(r => 
           r.tipo_operacion === reg.tipo_operacion && 
           (reg.tipo_operacion === 'ACIDO_GRASO' ? r.tanque_id === reg.tanque_id : true)
@@ -63,7 +64,8 @@ export default function ReporteFinalAuditoria() {
         };
       });
       
-      // CAMBIO CRITICO 3: Ahora SI filtramos lo que el usuario quiere ver en pantalla
+      // CAMBIO CRÍTICO 3: Aplicamos los filtros de UI (Fecha, Variedad, Operación) 
+      // DESPUÉS de haber calculado los KG correctamente.
       const filtrados = procesados.filter(r => {
         const f = r.created_at.split('T')[0];
         const cumpleFecha = f >= fechaInicio && f <= fechaFin;
@@ -76,6 +78,8 @@ export default function ReporteFinalAuditoria() {
     }
     setLoading(false);
   };
+
+  // --- LAS FUNCIONES DE EXPORTACIÓN Y RENDERIZADO SE MANTIENEN IGUAL ---
 
   const exportarExcel = () => {
     if (registros.length === 0) return alert("No hay datos");
