@@ -127,26 +127,18 @@ export default function EntradaACP() {
       const lineas = textRaw.split('\n');
       let valorDetectado = "0";
 
-      // BUSCAR LÍNEA CON SÍMBOLO Σ O TOTALIZADOR
       const lineaTotalizador = lineas.find((l: string) => 
         l.includes('Σ') || l.includes('E1') || l.includes('S1') || l.includes('M1')
       );
 
       if (lineaTotalizador) {
-        // CORRECCIÓN: Mantener el punto decimal si existe
-        valorDetectado = lineaTotalizador.replace(/[^0-9.]/g, '');
+        valorDetectado = lineaTotalizador.replace(/[^0-9]/g, '');
       } else {
         const lineasNumericas = lineas
-          .map((l: string) => l.replace(/[^0-9.]/g, ''))
+          .map((l: string) => l.replace(/[^0-9]/g, ''))
           .filter((l: string) => l.length >= 5);
         
         valorDetectado = lineasNumericas.length >= 2 ? lineasNumericas[1] : (lineasNumericas[0] || "0");
-      }
-
-      // Si el OCR no detectó el punto pero leyó los números (ej: 1063435), forzar decimales
-      if (!valorDetectado.includes('.') && valorDetectado.length > 2) {
-        const num = parseFloat(valorDetectado);
-        valorDetectado = (num / 100).toString();
       }
 
       setDatos({
@@ -196,26 +188,6 @@ export default function EntradaACP() {
     try {
       const lecturaNum = parseFloat(datos.totalizador);
 
-      // --- LÓGICA DE BALANCE Y ROLLOVER (10,000,000) ---
-      const { data: anterior } = await supabase
-        .from('operaciones_refineria')
-        .select('valor_lectura')
-        .eq('tipo_operacion', 'ENTRADA_ACP')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      let consumoCalculado = 0;
-      if (anterior) {
-        const valAnt = anterior.valor_lectura;
-        if (lecturaNum < valAnt) {
-          // Ocurrió el reset de los 10 millones
-          consumoCalculado = (10000000 - valAnt) + lecturaNum;
-        } else {
-          consumoCalculado = lecturaNum - valAnt;
-        }
-      }
-
       // Ejecutar cierre espejo si es necesario
       await aplicarCierreAutomaticoSiCambioVariedad(variedad, lecturaNum, fotoUrl);
 
@@ -232,8 +204,7 @@ export default function EntradaACP() {
       if (error) throw error;
 
       const msg = `*REPORTE ENTRADA ACP*%0A` +
-                  `*Lectura:* ${lecturaNum.toLocaleString('en-US', {minimumFractionDigits: 2})}%0A` +
-                  `*Consumo Periodo:* ${consumoCalculado.toLocaleString('en-US', {minimumFractionDigits: 2})} t%0A` +
+                  `*Lectura:* ${datos.totalizador}%0A` +
                   `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
                   `*Variedad:* ${variedad}%0A` +
                   `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
@@ -298,7 +269,7 @@ export default function EntradaACP() {
                 <input 
                   type="text"
                   value={datos.totalizador}
-                  onChange={(e) => setDatos({...datos, totalizador: e.target.value.replace(/[^0-9.]/g, '')})}
+                  onChange={(e) => setDatos({...datos, totalizador: e.target.value.replace(/[^0-9]/g, '')})}
                   className="w-full bg-transparent text-6xl font-black text-blue-400 tracking-tighter tabular-nums text-center focus:outline-none"
                 />
                 <a href={fotoUrl!} target="_blank" className="text-[10px] text-blue-500 underline block mt-4 font-black tracking-widest uppercase text-center">REVISAR FOTO ORIGINAL</a>
