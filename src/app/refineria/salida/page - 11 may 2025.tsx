@@ -16,7 +16,7 @@ export default function SalidaRBD() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PERSISTENCIA
+  // PERSISTENCIA (Usa una clave diferente a la de entrada para no mezclar)
   useEffect(() => {
     const backup = localStorage.getItem('backup_salida_rbd');
     if (backup) {
@@ -102,25 +102,19 @@ export default function SalidaRBD() {
       const lineas = textRaw.split('\n');
       let valorDetectado = "0";
 
+      // Lógica de detección igual a la de entrada para mantener consistencia
       const lineaTotalizador = lineas.find((l: string) => 
         l.includes('Σ') || l.includes('E1') || l.includes('S1') || l.includes('M1')
       );
 
       if (lineaTotalizador) {
-        // CORRECCIÓN: Permitir el punto decimal
-        valorDetectado = lineaTotalizador.replace(/[^0-9.]/g, '');
+        valorDetectado = lineaTotalizador.replace(/[^0-9]/g, '');
       } else {
         const lineasNumericas = lineas
-          .map((l: string) => l.replace(/[^0-9.]/g, ''))
+          .map((l: string) => l.replace(/[^0-9]/g, ''))
           .filter((l: string) => l.length >= 5);
         
         valorDetectado = lineasNumericas.length >= 2 ? lineasNumericas[1] : (lineasNumericas[0] || "0");
-      }
-
-      // CORRECCIÓN: Si no hay punto y el número es largo, forzar decimales (dividir por 100)
-      if (!valorDetectado.includes('.') && valorDetectado.length > 2) {
-        const num = parseFloat(valorDetectado);
-        valorDetectado = (num / 100).toString();
       }
 
       setDatos({
@@ -163,31 +157,9 @@ export default function SalidaRBD() {
     setStatusText('Guardando y preparando WhatsApp...');
 
     try {
-      const lecturaNum = parseFloat(datos.totalizador);
-
-      // --- LÓGICA DE BALANCE Y ROLLOVER (10,000,000) ---
-      const { data: anterior } = await supabase
-        .from('operaciones_refineria')
-        .select('valor_lectura')
-        .eq('tipo_operacion', 'SALIDA_RBD')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      let consumoCalculado = 0;
-      if (anterior) {
-        const valAnt = anterior.valor_lectura;
-        if (lecturaNum < valAnt) {
-          // Detectar reseteo de contador a los 10 millones
-          consumoCalculado = (10000000 - valAnt) + lecturaNum;
-        } else {
-          consumoCalculado = lecturaNum - valAnt;
-        }
-      }
-
       const { error } = await supabase.from('operaciones_refineria').insert([{
           tipo_operacion: 'SALIDA_RBD',
-          valor_lectura: lecturaNum, 
+          valor_lectura: parseFloat(datos.totalizador), 
           foto_url: fotoUrl,
           observaciones: observaciones,
           usuario_registro: 'Operador Salida',
@@ -198,8 +170,7 @@ export default function SalidaRBD() {
       if (error) throw error;
 
       const msg = `*REPORTE SALIDA RBD*%0A` +
-                  `*Lectura:* ${lecturaNum.toLocaleString('en-US', {minimumFractionDigits: 2})}%0A` +
-                  `*Producción Periodo:* ${consumoCalculado.toLocaleString('en-US', {minimumFractionDigits: 2})} t%0A` +
+                  `*Lectura:* ${datos.totalizador}%0A` +
                   `*Proceso:* ${esReproceso ? 'REPROCESO' : 'NORMAL'}%0A` +
                   `*Variedad:* ${variedad}%0A` +
                   `*Observaciones:* ${observaciones || 'Sin notas'}%0A` +
@@ -264,10 +235,10 @@ export default function SalidaRBD() {
                 <input 
                   type="text"
                   value={datos.totalizador}
-                  onChange={(e) => setDatos({...datos, totalizador: e.target.value.replace(/[^0-9.]/g, '')})}
+                  onChange={(e) => setDatos({...datos, totalizador: e.target.value.replace(/[^0-9]/g, '')})}
                   className="w-full bg-transparent text-6xl font-black text-amber-400 tracking-tighter tabular-nums text-center focus:outline-none"
                 />
-                <a href={fotoUrl!} target="_blank" className="text-[10px] text-amber-500 underline block mt-4 font-black tracking-widest uppercase text-center">REVISAR FOTO ORIGINAL</a>
+                <a href={fotoUrl!} target="_blank" className="text-[10px] text-amber-500 underline block mt-4 font-black tracking-widest uppercase">REVISAR FOTO ORIGINAL</a>
             </div>
             
             <textarea 
