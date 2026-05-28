@@ -10,13 +10,12 @@ import { subirImagen } from '@/lib/storage-utils';
 export default function ProcesoLlenado() {
   const router = useRouter();
   const [isClient, setIsClient] = useState(false);
-  const [batchId, setBatchId] = useState('Cargando...');
+  const [batchId, setBatchId] = useState('');
   const [listaVariedades, setListaVariedades] = useState<any[]>([]);
   const [listaProveedores, setListaProveedores] = useState<any[]>([]);
   const [listaTurnos, setListaTurnos] = useState<any[]>([]);
   const [listaOperadores, setListaOperadores] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  
   const [subiendoFoto, setSubiendoFoto] = useState<string | null>(null);
 
   const [datos, setDatos] = useState({
@@ -35,28 +34,38 @@ export default function ProcesoLlenado() {
     incidencia: { url: '' }
   });
 
-  // Función auxiliar para obtener fecha/hora actual en Zona Ecuador
   const getEcuadorDate = () => {
     return new Date(new Date().toLocaleString("en-US", { timeZone: "America/Guayaquil" }));
   };
 
+  // --- 1. CARGA INICIAL Y RECUPERACIÓN DE DATOS ---
   useEffect(() => {
     setIsClient(true);
     
     async function inicializar() {
-      // 1. Generación de Batch ID: DDMMAAAHHMMSS
-      const ahora = getEcuadorDate();
-      const dd = String(ahora.getDate()).padStart(2, '0');
-      const mm = String(ahora.getMonth() + 1).padStart(2, '0');
-      const aaaa = ahora.getFullYear();
-      const hh = String(ahora.getHours()).padStart(2, '0');
-      const min = String(ahora.getMinutes()).padStart(2, '0');
-      const ss = String(ahora.getSeconds()).padStart(2, '0');
-      
-      const nuevoBatchId = `${dd}${mm}${aaaa}${hh}${min}${ss}`;
-      setBatchId(nuevoBatchId);
+      // Intentar recuperar sesión anterior del localStorage
+      const guardadoBatchId = localStorage.getItem('pending_batch_id');
+      const guardadoDatos = localStorage.getItem('pending_datos');
+      const guardadoFotos = localStorage.getItem('pending_fotos');
 
-      // 2. Cargar parámetros (Igual a tu archivo OK)
+      if (guardadoBatchId) {
+        setBatchId(guardadoBatchId);
+        if (guardadoDatos) setDatos(JSON.parse(guardadoDatos));
+        if (guardadoFotos) setFotos(JSON.parse(guardadoFotos));
+      } else {
+        // Si no hay nada guardado, generar nuevo ID (Solo la primera vez)
+        const ahora = getEcuadorDate();
+        const dd = String(ahora.getDate()).padStart(2, '0');
+        const mm = String(ahora.getMonth() + 1).padStart(2, '0');
+        const aaaa = ahora.getFullYear();
+        const hh = String(ahora.getHours()).padStart(2, '0');
+        const min = String(ahora.getMinutes()).padStart(2, '0');
+        const ss = String(ahora.getSeconds()).padStart(2, '0');
+        const nuevoId = `${dd}${mm}${aaaa}${hh}${min}${ss}`;
+        setBatchId(nuevoId);
+        localStorage.setItem('pending_batch_id', nuevoId);
+      }
+
       const [resParams, resOps] = await Promise.all([
         supabase.from('parametros').select('*').eq('activo', true),
         supabase.from('operadores').select('*').eq('activo', true).order('nombre')
@@ -72,7 +81,14 @@ export default function ProcesoLlenado() {
     inicializar();
   }, []);
 
-  if (!isClient) return null;
+  // --- 2. AUTOGUARDADO EN TIEMPO REAL ---
+  useEffect(() => {
+    if (isClient && batchId) {
+      localStorage.setItem('pending_datos', JSON.stringify(datos));
+      localStorage.setItem('pending_fotos', JSON.stringify(fotos));
+    }
+  }, [datos, fotos, batchId, isClient]);
+
 
   const abrirCamara = async (tipo: keyof typeof fotos) => {
     const input = document.createElement('input');
@@ -86,7 +102,6 @@ export default function ProcesoLlenado() {
         setSubiendoFoto(tipo);
         try {
           const urlNube = await subirImagen(file, tipo);
-          // Guardamos la hora de captura en formato ISO de Ecuador
           const nuevaInfoFoto = { url: urlNube, hora: getEcuadorDate().toISOString() };
           setFotos(prev => ({ ...prev, [tipo]: nuevaInfoFoto }));
         } catch (error) {
@@ -107,7 +122,6 @@ export default function ProcesoLlenado() {
 
     setLoading(true);
 
-    // Formateador para que Supabase reciba YYYY-MM-DD HH:MM:SS en hora Ecuador
     const formatEcuadorSQL = (fechaISO: string | null) => {
       if (!fechaISO) return null;
       const d = new Date(fechaISO);
@@ -134,19 +148,23 @@ export default function ProcesoLlenado() {
       hora_foto_visor_lleno: formatEcuadorSQL(getEcuadorDate().toISOString())
     };
 
-    // INSERT DIRECTO (Como en tu archivo que sí funcionaba)
-    const { error } = await supabase
-      .from('procesos_batch')
-      .insert([payload]);
+    const { error } = await supabase.from('procesos_batch').insert([payload]);
 
     if (error) {
       alert("Error al guardar: " + error.message);
     } else {
+      // --- 3. LIMPIEZA DE MEMORIA LOCAL TRAS ÉXITO ---
+      localStorage.removeItem('pending_batch_id');
+      localStorage.removeItem('pending_datos');
+      localStorage.removeItem('pending_fotos');
+      
       alert("✅ PROCESO " + batchId + " GUARDADO EXITOSAMENTE");
       window.location.reload();
     }
     setLoading(false);
   };
+
+  if (!isClient) return null;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-28">
@@ -154,12 +172,19 @@ export default function ProcesoLlenado() {
         <button onClick={() => router.back()} className="text-xl">←</button>
         <div className="text-center">
           <h1 className="font-black text-xs tracking-widest uppercase">Proceso de Pesado</h1>
-          <p className="text-[10px] font-bold opacity-70">{batchId}</p>
+          <p className="text-[10px] font-bold opacity-70">{batchId || 'Generando...'}</p>
         </div>
         <div className="w-6"></div>
       </header>
 
       <div className="p-5 space-y-5">
+        {/* Banner de aviso de recuperación */}
+        {localStorage.getItem('pending_batch_id') && (
+            <div className="bg-amber-100 text-amber-800 text-[10px] p-2 rounded-lg text-center font-bold animate-pulse">
+                ⚠️ PROCESO EN CURSO RECUPERADO
+            </div>
+        )}
+
         <section className="bg-white p-5 rounded-3xl border shadow-sm space-y-4">
           <div>
             <label className="text-[10px] font-black text-red-700 uppercase ml-1">1. Seleccione Operador</label>

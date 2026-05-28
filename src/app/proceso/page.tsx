@@ -38,12 +38,22 @@ export default function ProcesoLlenado() {
     return new Date(new Date().toLocaleString("en-US", { timeZone: "America/Guayaquil" }));
   };
 
-  // --- 1. CARGA INICIAL Y RECUPERACIÓN DE DATOS ---
+  // Función interna de compresión
+  const comprimirImagen = async (file: File): Promise<Blob> => {
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement('canvas');
+    const maxWidth = 1000;
+    const scale = maxWidth / bitmap.width;
+    canvas.width = maxWidth;
+    canvas.height = bitmap.height * scale;
+    const ctx = canvas.getContext('2d');
+    ctx?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob!), 'image/jpeg', 0.6));
+  };
+
   useEffect(() => {
     setIsClient(true);
-    
     async function inicializar() {
-      // Intentar recuperar sesión anterior del localStorage
       const guardadoBatchId = localStorage.getItem('pending_batch_id');
       const guardadoDatos = localStorage.getItem('pending_datos');
       const guardadoFotos = localStorage.getItem('pending_fotos');
@@ -53,15 +63,8 @@ export default function ProcesoLlenado() {
         if (guardadoDatos) setDatos(JSON.parse(guardadoDatos));
         if (guardadoFotos) setFotos(JSON.parse(guardadoFotos));
       } else {
-        // Si no hay nada guardado, generar nuevo ID (Solo la primera vez)
         const ahora = getEcuadorDate();
-        const dd = String(ahora.getDate()).padStart(2, '0');
-        const mm = String(ahora.getMonth() + 1).padStart(2, '0');
-        const aaaa = ahora.getFullYear();
-        const hh = String(ahora.getHours()).padStart(2, '0');
-        const min = String(ahora.getMinutes()).padStart(2, '0');
-        const ss = String(ahora.getSeconds()).padStart(2, '0');
-        const nuevoId = `${dd}${mm}${aaaa}${hh}${min}${ss}`;
+        const nuevoId = `${String(ahora.getDate()).padStart(2, '0')}${String(ahora.getMonth() + 1).padStart(2, '0')}${ahora.getFullYear()}${String(ahora.getHours()).padStart(2, '0')}${String(ahora.getMinutes()).padStart(2, '0')}${String(ahora.getSeconds()).padStart(2, '0')}`;
         setBatchId(nuevoId);
         localStorage.setItem('pending_batch_id', nuevoId);
       }
@@ -81,14 +84,12 @@ export default function ProcesoLlenado() {
     inicializar();
   }, []);
 
-  // --- 2. AUTOGUARDADO EN TIEMPO REAL ---
   useEffect(() => {
     if (isClient && batchId) {
       localStorage.setItem('pending_datos', JSON.stringify(datos));
       localStorage.setItem('pending_fotos', JSON.stringify(fotos));
     }
   }, [datos, fotos, batchId, isClient]);
-
 
   const abrirCamara = async (tipo: keyof typeof fotos) => {
     const input = document.createElement('input');
@@ -101,11 +102,13 @@ export default function ProcesoLlenado() {
       if (file) {
         setSubiendoFoto(tipo);
         try {
-          const urlNube = await subirImagen(file, tipo);
+          const blobComprimido = await comprimirImagen(file);
+          const fileComprimido = new File([blobComprimido], file.name, { type: 'image/jpeg' });
+          const urlNube = await subirImagen(fileComprimido, tipo);
           const nuevaInfoFoto = { url: urlNube, hora: getEcuadorDate().toISOString() };
           setFotos(prev => ({ ...prev, [tipo]: nuevaInfoFoto }));
         } catch (error) {
-          alert("Error al subir la imagen.");
+          alert("Error al procesar/subir la imagen.");
         } finally {
           setSubiendoFoto(null);
         }
@@ -119,9 +122,7 @@ export default function ProcesoLlenado() {
       alert("Por favor complete todos los campos y tome las fotos requeridas");
       return;
     }
-
     setLoading(true);
-
     const formatEcuadorSQL = (fechaISO: string | null) => {
       if (!fechaISO) return null;
       const d = new Date(fechaISO);
@@ -153,11 +154,9 @@ export default function ProcesoLlenado() {
     if (error) {
       alert("Error al guardar: " + error.message);
     } else {
-      // --- 3. LIMPIEZA DE MEMORIA LOCAL TRAS ÉXITO ---
       localStorage.removeItem('pending_batch_id');
       localStorage.removeItem('pending_datos');
       localStorage.removeItem('pending_fotos');
-      
       alert("✅ PROCESO " + batchId + " GUARDADO EXITOSAMENTE");
       window.location.reload();
     }
@@ -178,7 +177,6 @@ export default function ProcesoLlenado() {
       </header>
 
       <div className="p-5 space-y-5">
-        {/* Banner de aviso de recuperación */}
         {localStorage.getItem('pending_batch_id') && (
             <div className="bg-amber-100 text-amber-800 text-[10px] p-2 rounded-lg text-center font-bold animate-pulse">
                 ⚠️ PROCESO EN CURSO RECUPERADO
@@ -242,7 +240,7 @@ export default function ProcesoLlenado() {
             onClick={() => abrirCamara('visor_cero')} 
             className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.visor_cero.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
           >
-            {subiendoFoto === 'visor_cero' ? <span className="text-[10px] animate-pulse">...</span> : 
+            {subiendoFoto === 'visor_cero' ? <span className="text-[10px] animate-pulse">COMPRIMIENDO...</span> : 
              fotos.visor_cero.url ? <img src={fotos.visor_cero.url} className="w-full h-full object-cover rounded-2xl" /> : <>
               <span className="text-3xl mb-1">⚖️</span>
               <span className="text-[9px] font-black uppercase">Visor en Cero</span>
@@ -255,7 +253,7 @@ export default function ProcesoLlenado() {
             onClick={() => abrirCamara('tanque_vacio')} 
             className={`aspect-square rounded-3xl border-2 border-dashed flex flex-col items-center justify-center p-2 transition-all ${fotos.tanque_vacio.url ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white text-gray-400'}`}
           >
-            {subiendoFoto === 'tanque_vacio' ? <span className="text-[10px] animate-pulse">...</span> :
+            {subiendoFoto === 'tanque_vacio' ? <span className="text-[10px] animate-pulse">COMPRIMIENDO...</span> :
              fotos.tanque_vacio.url ? <img src={fotos.tanque_vacio.url} className="w-full h-full object-cover rounded-2xl" /> : <>
               <span className="text-3xl mb-1">🛢️</span>
               <span className="text-[9px] font-black uppercase">Tanque Vacío</span>
@@ -299,7 +297,7 @@ export default function ProcesoLlenado() {
             onClick={() => abrirCamara('incidencia')} 
             className={`w-full p-4 rounded-2xl border-2 border-dashed text-[10px] font-black transition-all ${fotos.incidencia.url ? 'bg-amber-100 border-amber-500 text-amber-700' : 'border-amber-200 text-amber-400 bg-white'}`}
           >
-            {subiendoFoto === 'incidencia' ? 'CARGANDO...' : 
+            {subiendoFoto === 'incidencia' ? 'COMPRIMIENDO...' : 
              fotos.incidencia.url ? '✓ EVIDENCIA DE NOVEDAD LISTA' : '+ FOTO JUSTIFICACIÓN / NOVEDAD'}
           </button>
         </div>
