@@ -1,21 +1,17 @@
-﻿import { supabase } from '@/lib/supabase';
+﻿import { supabase } from '@/lib/supabase'; // Usando tu importación actual
 
 export async function subirImagen(archivo: File, nombreRuta: string) {
-  // Generar un nombre de archivo único
+  // 1. Nombre único para el archivo físico
   const fileName = `batches/${Date.now()}_${nombreRuta}.jpg`;
 
-  // Subida con optimización de tipo y caché
+  // 2. Subida al Bucket "evidencias" (El que ya creaste)
   const { data, error } = await supabase.storage
     .from('evidencias')
-    .upload(fileName, archivo, {
-      contentType: 'image/jpeg',
-      cacheControl: '3600',
-      upsert: true
-    });
+    .upload(fileName, archivo);
 
   if (error) throw error;
 
-  // Obtener la URL pública
+  // 3. Obtener la URL pública (Lo que pesará KB en tu tabla)
   const { data: urlData } = supabase.storage
     .from('evidencias')
     .getPublicUrl(data.path);
