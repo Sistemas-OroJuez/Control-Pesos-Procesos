@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { subirImagen } from '@/lib/storage-utils';
+import imageCompression from 'browser-image-compression'; // Importamos la librería
 
 export default function ProcesoLlenado() {
   const router = useRouter();
@@ -38,31 +39,19 @@ export default function ProcesoLlenado() {
     return new Date(new Date().toLocaleString("en-US", { timeZone: "America/Guayaquil" }));
   };
 
-  // --- CORRECCIÓN: Lógica robusta de compresión con Canvas ---
-  const comprimirImagen = (file: File): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 800; // Ancho máximo seguro
-          const scale = MAX_WIDTH / img.width;
-          canvas.width = MAX_WIDTH;
-          canvas.height = img.height * scale;
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          // Calidad 0.5 asegura una reducción de peso considerable
-          canvas.toBlob((blob) => {
-            if (blob) resolve(blob);
-            else reject(new Error("Error al generar blob"));
-          }, 'image/jpeg', 0.5);
-        };
-      };
-      reader.onerror = (err) => reject(err);
-    });
+  // --- LÓGICA DE COMPRESIÓN PROFESIONAL ---
+  const comprimirImagen = async (file: File): Promise<File> => {
+    const options = {
+      maxSizeMB: 0.3, // Máximo 300KB por foto
+      maxWidthOrHeight: 800, // Redimensionar a 800px para mayor velocidad
+      useWebWorker: true,
+    };
+    try {
+      return await imageCompression(file, options);
+    } catch (error) {
+      console.error("Error al comprimir:", error);
+      return file;
+    }
   };
 
   useEffect(() => {
@@ -116,14 +105,14 @@ export default function ProcesoLlenado() {
       if (file) {
         setSubiendoFoto(tipo);
         try {
-          // Usamos la lógica de compresión corregida
-          const blobComprimido = await comprimirImagen(file);
-          const fileComprimido = new File([blobComprimido], `${tipo}.jpg`, { type: 'image/jpeg' });
-          const urlNube = await subirImagen(fileComprimido, tipo);
+          // Comprimimos antes de enviar a subirImagen
+          const archivoComprimido = await comprimirImagen(file);
+          const urlNube = await subirImagen(archivoComprimido, tipo);
+          
           const nuevaInfoFoto = { url: urlNube, hora: getEcuadorDate().toISOString() };
           setFotos(prev => ({ ...prev, [tipo]: nuevaInfoFoto }));
         } catch (error) {
-          alert("Error al procesar/subir la imagen.");
+          alert("Error al procesar la imagen. Intente de nuevo.");
         } finally {
           setSubiendoFoto(null);
         }
