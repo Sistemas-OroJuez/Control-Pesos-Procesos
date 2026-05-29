@@ -1,12 +1,13 @@
 ﻿import { supabase } from '@/lib/supabase';
 
-// Recibe un Blob (la imagen ya comprimida) directamente
-export async function subirImagen(blob: Blob, nombreRuta: string) {
+export async function subirImagen(archivo: File | Blob, nombreRuta: string) {
+  // Generar nombre único
   const fileName = `batches/${Date.now()}_${nombreRuta}.jpg`;
 
+  // Subir el Blob/File directamente
   const { data, error } = await supabase.storage
     .from('evidencias')
-    .upload(fileName, blob, {
+    .upload(fileName, archivo, {
       contentType: 'image/jpeg',
       upsert: true
     });
@@ -17,5 +18,5 @@ export async function subirImagen(blob: Blob, nombreRuta: string) {
     .from('evidencias')
     .getPublicUrl(data.path);
 
-  return urlData.publicUrl; 
+  return urlData.publicUrl;
 }
